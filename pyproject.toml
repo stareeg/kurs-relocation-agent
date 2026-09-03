@@ -1,0 +1,214 @@
+# Корень проекта. Плоская раскладка: пакеты core/ api/ bot_app/ лежат прямо в корне и
+# импортируются через pythonpath/cwd (без uv-workspace и editable-install). uv держит
+# окружение и зависимости; сам корень пакетом не собирается (package = false).
+[project]
+name = "work-hunting"
+version = "0.1.0"
+description = "Career & Relocation Copilot — плоский одно-процессный рантайм (core + api + bot_app)"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+    # --- Рантайм apps (api + bot) ---
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.3",
+    "python-multipart>=0.0.9",
+    "aiogram>=3.30.0",
+    "aiohttp>=3.11.18",
+    "rich>=14.2.0",
+    "click>=8.1.8",
+    # --- Ядро core: контракты, LLM-слой, БД, оркестратор ---
+    "pydantic>=2.11.4",
+    "pydantic-settings>=2.9.1",
+    "httpx[http2]>=0.28.1",
+    "h2>=4.1.0",
+    "socksio>=1.0.0",
+    "python-dotenv>=1.1.0",
+    "langchain-core>=1.5.5",
+    "langsmith>=0.11.0",
+    "asyncpg>=0.30.0",
+    # YAML-конфиги (weights_spec и прочие).
+    "pyyaml>=6.0",
+    # PDF резюме (core/domains/profile/parse_pdf.py) + текстовые вложения (core/kernel/text/extract.py).
+    "pypdf>=6.16.0",
+    # DOCX-вложения (core/kernel/text/extract.py).
+    "python-docx>=1.1.2",
+    # PNG-карточки скоринга в Telegram (bot_app/services/card_image.py, TB-5).
+    "pillow>=11",
+    # IANA tz database for zoneinfo on Windows (stdlib ZoneInfo has no bundled data there).
+    "tzdata>=2025.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+    "ruff>=0.8",
+    "pyright>=1.1.390",
+    "pre-commit>=4.0",
+    # R-02: анализ графа импортов (циклы, контракты слоёв).
+    "grimp>=3.14",
+    "import-linter>=2.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+# --- Тесты (перенесено из pytest.ini) ---
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Корень репо в sys.path — импорты core/api/bot_app без установки пакета.
+pythonpath = ["."]
+# llm-тесты делают реальные платные вызовы, db-тесты требуют живой Postgres — оба по умолчанию
+# исключены (гонять: pytest -m llm / pytest -m db).
+addopts = "-m 'not llm and not db'"
+markers = [
+    "llm: integration tests that call the real LLM API (require OPENROUTER_API_KEY)",
+    "db: integration tests that require a live Postgres (RLS cannot be mocked)",
+]
+
+# --- Линт/формат ---
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+include = ["core/**/*.py", "api/**/*.py", "bot_app/**/*.py"]
+# Операторские скрипты и тесты линтуем отдельно/не линтуем. force-exclude в pre-commit
+# заставляет ruff уважать этот список даже при явной передаче файлов хуком.
+extend-exclude = ["tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI-идиома: Query/Depends/Path/Body в дефолтах параметров — не B008 (это контракт, не мутабельный дефолт).
+extend-immutable-calls = [
+    "fastapi.Query",
+    "fastapi.Depends",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.UploadFile",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# FR2-60: E501 — литералы промптов/логов/docstring'ов (перенос мнёт текст или лог-сообщение).
+# Обычный код вынесен/перенесён точечно; ниже — файлы, где длина почти всегда в литералах.
+"api/routers/assistant/conversations.py" = ["E501"]
+"api/routers/preparation/debrief.py" = ["E501"]
+"api/routers/offers/offers.py" = ["E501"]
+"api/routers/profile/settings.py" = ["E501"]
+"api/routers/meta/views.py" = ["E501"]
+"api/schemas/*.py" = ["E501"]
+"bot_app/config.py" = ["E501"]
+"bot_app/handlers/menu.py" = ["E501"]
+"bot_app/run.py" = ["E501"]
+"bot_app/services/prep_scheduler.py" = ["E501"]
+"bot_app/services/vacancy_card.py" = ["E501"]
+"core/domains/assistant/service.py" = ["E501"]
+"core/domains/profile/model.py" = ["E501"]
+"core/domains/profile/parse_pdf.py" = ["E501"]
+"core/domains/profile/resume_stats.py" = ["E501"]
+"core/domains/profile/weak_bullets_llm.py" = ["E501"]
+"core/domains/market/market.py" = ["E501"]
+"core/domains/market/market_grid.py" = ["E501"]
+"core/domains/market/market_grid_compute.py" = ["E501"]
+"core/domains/market/pulse.py" = ["E501"]
+"core/domains/market/search_metrics.py" = ["E501"]
+"core/domains/market/situation.py" = ["E501"]
+"core/domains/market/*.py" = ["E501"]
+"core/domains/market/salary_calibration/*.py" = ["E501"]
+"core/domains/market/salary_calibration/salary_extract.py" = ["E501"]
+"core/config.py" = ["E501"]
+"core/platform/db/pool.py" = ["E501"]
+"core/domains/preparation/interview/company_profiles.py" = ["E501"]
+"core/domains/preparation/interview/debrief.py" = ["E501"]
+"core/domains/preparation/interview/debrief_resolution.py" = ["E501"]
+"core/domains/preparation/interview/prep.py" = ["E501"]
+"core/domains/preparation/interview/prep_pack.py" = ["E501"]
+"core/platform/llm/openrouter_chat.py" = ["E501"]
+"core/domains/preparation/vacancy_context.py" = ["E501"]
+"core/domains/preparation/prompts.py" = ["E501"]
+"core/domains/preparation/debrief.py" = ["E501"]
+"core/domains/market/market_snapshot.py" = ["E501"]
+"core/domains/preparation/screening_questions.py" = ["E501"]
+"core/domains/preparation/interview_stages.py" = ["E501"]
+"core/domains/preparation/*.py" = ["E501"]
+"core/domains/preparation/screening/*.py" = ["E501"]
+"core/domains/offers/models.py" = ["E501"]
+"core/domains/offers/*.py" = ["E501"]
+"core/domains/opportunities/discovered.py" = ["E501"]
+"core/domains/assistant/*.py" = ["E501"]
+"core/domains/pipeline/*.py" = ["E501"]
+"core/domains/opportunities/prompt.py" = ["E501"]
+"core/domains/opportunities/recalibrate.py" = ["E501"]
+"core/domains/opportunities/salary_estimator.py" = ["E501"]
+"core/domains/opportunities/scorer.py" = ["E501"]
+"core/domains/opportunities/discovery.py" = ["E501"]
+"core/domains/opportunities/jobs.py" = ["E501"]
+"core/domains/opportunities/skipped.py" = ["E501"]
+"core/domains/opportunities/companies/backfill.py" = ["E501"]
+"core/domains/profile/profile.py" = ["E501"]
+"core/domains/offers/offer_compare.py" = ["E501"]
+"api/routers/meta/meta.py" = ["E501"]
+"api/routers/opportunities/skipped.py" = ["E501"]
+"api/routers/pipeline/cover_letter.py" = ["E501"]
+"api/routers/pipeline/hr_threads.py" = ["E501"]
+"api/routers/pipeline/negotiations.py" = ["E501"]
+"api/routers/assistant/notes.py" = ["E501"]
+"core/domains/market/job_stats.py" = ["E501"]
+"core/domains/opportunities/getmatch_sync.py" = ["E501"]
+"core/domains/opportunities/score_revision.py" = ["E501"]
+"core/domains/offers/offer_negotiation.py" = ["E501"]
+"core/domains/offers/hh_negotiations.py" = ["E501"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["core", "api", "bot_app"]
+exclude = ["**/__pycache__", "tests"]
+# Lazy __getattr__ — домены с ленивым импортом используют этот паттерн намеренно,
+# pyright не может резолвить __all__ через __getattr__ (reportUnsupportedDunderAll).
+reportUnsupportedDunderAll = false
+
+# Контракты — правило слоёв из docs/ARCHITECTURE.md («Правила зависимостей»), 1:1.
+[tool.importlinter]
+root_packages = ["core", "api", "bot_app"]
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "core layers: app > domains > kernel"
+type = "layers"
+layers = [
+    "core.app",
+    "core.domains",
+    "core.kernel",
+]
+# core.app.pipeline — чистый оркестратор без доменного знания, единственное разрешённое
+# исключение из «домены не импортируют app» (docs/ARCHITECTURE.md, правило 4).
+ignore_imports = ["core.domains.** -> core.app.pipeline"]
+
+[[tool.importlinter.contracts]]
+name = "platform не импортирует kernel/domains/app/api/bot_app"
+type = "forbidden"
+source_modules = ["core.platform"]
+forbidden_modules = ["core.kernel", "core.domains", "core.app", "api", "bot_app"]
+# LlmFeature-реестр (A-06): platform.llm.registry.ensure_features_loaded() лениво (внутри
+# функции, не на верхнем уровне модуля) импортирует domains/*/llm.py ради побочного эффекта
+# регистрации — единственный намеренный разворот направления в системе.
+ignore_imports = ["core.platform.llm.registry -> core.domains.**"]
+
+[[tool.importlinter.contracts]]
+name = "kernel не импортирует platform (только stdlib/pydantic)"
+type = "forbidden"
+source_modules = ["core.kernel"]
+forbidden_modules = ["core.platform"]
+
+[[tool.importlinter.contracts]]
+name = "core (domains/app) не импортирует api/bot_app"
+type = "forbidden"
+source_modules = ["core.domains", "core.app"]
+forbidden_modules = ["api", "bot_app"]

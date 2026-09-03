@@ -1,0 +1,87 @@
+# Прод-оверрайд для VM Selectel:
+#   docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d
+# Запуск из корня репо. Caddy — единственная внешняя дверь (80/443, автосертификат Let's
+# Encrypt через deploy/Caddyfile); postgres/api/frontend перестают публиковаться на 0.0.0.0 и
+# биндятся на 127.0.0.1 — простой ufw allow тут не спас бы (Docker сам пишет DNAT-правила в
+# FORWARD в обход ufw INPUT), поэтому решаем биндингом порта, не файрволом.
+#
+# `!override` обязателен на `ports:` — без него Compose конкатенирует список из compose.yaml с
+# этим файлом (append, не replace) и порт оказался бы опубликован дважды: и на 0.0.0.0 из
+# базового файла, и на 127.0.0.1 отсюда.
+#
+# `--env-file .env` ОБЯЗАТЕЛЕН на каждый вызов (build/run/up/exec), не только здесь — Compose
+# резолвит `${VAR}`-подстановки (POSTGRES_PASSWORD ниже, DOMAIN у caddy) относительно каталога
+# ПЕРВОГО `-f`-файла (`deploy/`), не текущей директории и не рядом с `env_file:`. Без явного
+# `--env-file` он молча не находит корневой `.env` и подставляет дефолт (`${POSTGRES_PASSWORD:-
+# copilot}` → буквально "copilot") — багу поймали руками на первом прод-деплое: `env_file:` у
+# api/bot читает `../.env` через отдельный, не связанный с этим механизм, поэтому api получал
+# настоящий пароль, а initdb postgres — дефолтный, и они расходились. В локальной разработке
+# это молчало, потому что дефолт `copilot` там и так совпадает с паролем из .env.
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !override []
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  api:
+    restart: unless-stopped
+    # Без этого build.args extension/build.mjs получает EXT_API_BASE_URL="" (ARG-дефолт в
+    # deploy/Dockerfile) и печёт в .zip localhost:8000 + host_permissions на localhost — друг,
+    # скачавший расширение со страницы «Расширение», получал «Failed to fetch» на своей машине,
+    # где backend не поднят (docs/problems.md, 2026-08-05). https://${DOMAIN} — тот же домен, что
+    # уже отдаёт Caddy (см. caddy.environment.DOMAIN ниже); на проде web и api — один origin.
+    build:
+      args:
+        EXT_API_BASE_URL: https://${DOMAIN}
+        GIT_SHA: ${GIT_SHA:-}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  frontend:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:5173:80"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  bot:
+    restart: unless-stopped
+    build:
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      # UDP тоже нужен: HTTP/2 у Caddy и так работает по TLS-ALPN без конфига, а вот
+      # HTTP/3 (QUIC) — поверх UDP, без этого порта Caddy на него не переключится.
+      - "443:443/udp"
+    volumes:
+      - ../deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

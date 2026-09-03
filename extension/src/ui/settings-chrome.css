@@ -1,0 +1,370 @@
+/* Общий CSS для options.html и popup.html. Обе страницы — не shadow DOM (в отличие
+   от src/ui/index.css → dist/panel.css для панели на странице вакансии), поэтому токены на
+   :root, а не на :host/.jh-root. Вынесено из options.html, чтобы не копипастить в popup.html. */
+:root {
+  --jh-bg: #ffffff;
+  --jh-bg-subtle: #f8fafc; /* slate-50 */
+  --jh-bg-muted: #f1f5f9; /* slate-100 */
+  --jh-border: #e2e8f0; /* slate-200 */
+  --jh-border-strong: #cbd5e1; /* slate-300 */
+  --jh-fg: #0f172a; /* slate-900 */
+  --jh-fg-body: #334155; /* slate-700 */
+  --jh-fg-muted: #64748b; /* slate-500 */
+  --jh-fg-meta: #94a3b8; /* slate-400 */
+  --jh-pos-bg: #ecfdf5;
+  --jh-pos-fg: #047857;
+  --jh-pos-border: #a7f3d0;
+  --jh-neg-bg: #fff1f2;
+  --jh-neg-fg: #be123c;
+  --jh-neg-border: #fecdd5;
+  --jh-warn-bg: #fffbeb;
+  --jh-warn-fg: #b45309;
+  --jh-warn-border: #fde68a;
+  --jh-info-bg: #f0f9ff;
+  --jh-info-fg: #0369a1;
+  --jh-info-border: #bae6fd;
+  --jh-accent: #0f172a;
+  --jh-accent-hover: #1e293b;
+  --jh-accent-fg: #ffffff;
+  --jh-ring: rgba(15, 23, 42, 0.15);
+  --jh-radius-control: 8px;
+  --jh-radius-panel: 12px;
+  --jh-transition: 200ms ease;
+  --jh-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--jh-font);
+  background: var(--jh-bg-subtle);
+  color: var(--jh-fg-body);
+  margin: 0;
+  padding: 32px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.jh-card {
+  max-width: 520px;
+  margin: 0 auto;
+  background: var(--jh-bg);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-panel);
+  padding: 24px;
+  box-shadow: 0 10px 30px -16px rgba(15, 23, 42, 0.18);
+}
+
+.jh-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-fg);
+  margin-bottom: 4px;
+}
+.jh-brand svg {
+  color: var(--jh-fg-muted);
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--jh-fg);
+  margin: 0 0 4px;
+}
+.jh-sub {
+  font-size: 13px;
+  color: var(--jh-fg-muted);
+  margin: 0 0 20px;
+}
+
+label {
+  display: block;
+  margin: 16px 0 5px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--jh-fg-body);
+}
+
+input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--jh-border-strong);
+  border-radius: var(--jh-radius-control);
+  font-size: 14px;
+  color: var(--jh-fg);
+  background: var(--jh-bg);
+  outline: none;
+  transition: border-color var(--jh-transition), box-shadow var(--jh-transition);
+}
+input::placeholder {
+  color: var(--jh-fg-meta);
+}
+input:focus {
+  border-color: var(--jh-accent);
+  box-shadow: 0 0 0 3px var(--jh-ring);
+}
+
+.hint {
+  color: var(--jh-fg-muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
+.jh-options-hint {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--jh-border);
+}
+
+.jh-parser-config {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--jh-border);
+}
+
+.jh-parser-config .hint {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.jh-parser-config pre {
+  margin-top: 12px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg-subtle);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 15px;
+  border: 1px solid transparent;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-accent);
+  color: var(--jh-accent-fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+button:hover {
+  background: var(--jh-accent-hover);
+}
+button svg {
+  width: 16px;
+  height: 16px;
+}
+button.secondary {
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  border-color: var(--jh-border-strong);
+}
+button.secondary:hover {
+  background: var(--jh-bg-subtle);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+button:focus-visible {
+  outline: 2px solid var(--jh-accent);
+  outline-offset: 2px;
+}
+
+.jh-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  min-height: 20px;
+  font-size: 13px;
+  padding: 0;
+}
+.jh-status:empty {
+  display: none;
+}
+.jh-status svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.jh-status.ok {
+  padding: 8px 12px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-pos-bg);
+  color: var(--jh-pos-fg);
+  border: 1px solid var(--jh-pos-border);
+}
+.jh-status.err {
+  padding: 8px 12px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-neg-bg);
+  color: var(--jh-neg-fg);
+  border: 1px solid var(--jh-neg-border);
+}
+.jh-status.loading,
+.jh-status.info {
+  color: var(--jh-fg-muted);
+}
+
+.jh-spin {
+  animation: jh-spin 0.8s linear infinite;
+}
+@keyframes jh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Кейфрейм для «Вы авторизованы как @X» (popup §2.3, options «Аккаунт» §2.5) — fade+scale,
+   тот же дух, что jh-spin выше, но для появления карточки статуса, а не спиннера. */
+.jh-pop {
+  animation: jh-pop 220ms ease;
+}
+@keyframes jh-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Секция входа (auth/render.ts) — общая для options.html и popup.html (EX-10/EX-17). */
+.jh-auth-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--jh-fg-muted);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.jh-auth-active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 20px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-pos-bg);
+  border: 1px solid var(--jh-pos-border);
+}
+.jh-auth-active-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.jh-auth-active-row svg {
+  flex-shrink: 0;
+  color: var(--jh-pos-fg);
+  margin-top: 1px;
+}
+.jh-auth-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-fg);
+}
+.jh-auth-hint {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+}
+.jh-auth-logout {
+  align-self: flex-start;
+  background: var(--jh-bg);
+  color: var(--jh-neg-fg);
+  border-color: var(--jh-neg-border);
+}
+.jh-auth-logout:hover {
+  background: var(--jh-neg-bg);
+}
+
+.jh-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.jh-auth-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--jh-fg-body);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jh-auth-steps a {
+  color: var(--jh-info-fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.jh-auth-steps a:hover {
+  text-decoration: underline;
+}
+.jh-auth-revoked {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-warn-bg);
+  color: var(--jh-warn-fg);
+  border: 1px solid var(--jh-warn-border);
+  font-size: 12px;
+}
+.jh-auth-input {
+  border-color: var(--jh-info-border);
+  background: var(--jh-info-bg);
+}
+.jh-auth-input:focus {
+  border-color: var(--jh-info-fg);
+}
+.jh-auth-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--jh-neg-fg);
+}
+.jh-auth-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+}
+
+/* Popup (popup.html, Шаг 3) — то же визуальное ядро, что options, но фиксированная ширина
+   окна и без центрирующих отступов: default_popup растёт по контенту, body-центровка карточки
+   выглядела бы как «пустая полоса браузера» вокруг маленького окна. */
+body.jh-popup {
+  width: 340px;
+  padding: 0;
+  background: var(--jh-bg);
+}
+.jh-popup-card {
+  max-width: none;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 16px;
+}
+.jh-popup-options {
+  width: 100%;
+  justify-content: center;
+}

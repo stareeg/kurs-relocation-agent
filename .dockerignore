@@ -1,0 +1,27 @@
+# В образ идут только манифесты + core/ api/ bot_app/ + ship-набор extension/ (см. deploy/Dockerfile)
+.git
+.venv
+__pycache__
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.env
+secrets/
+node_modules/
+# extension/ целиком не исключаем — deploy/Dockerfile этап ext-build собирает dist/ из исходников,
+# финальный слой копирует только ship-набор (dist/, icons/, manifest.json, options.html, popup.html).
+# Тяжёлое внутри extension/ (node_modules, src после сборки, tests) не попадает в финальный образ
+# благодаря multi-stage COPY --from=ext-build и явным путям во втором этапе.
+plans/
+resume/
+docs/
+tests/
+*.md
+# prompts/ — рантайм-зависимость (core/domains/*/llm.py резолвит пути относительно CWD в
+# контейнере), не dev-only каталог вроде plans/docs/ — не исключать. Большинство файлов внутри
+# *.md, поэтому одного удаления строки "prompts/" недостаточно: без явного !-негейта их вырезал бы
+# бы общий паттерн *.md выше (docs/problems.md, 2026-08-05 — FileNotFoundError на каждом LLM-вызове
+# в проде).
+!prompts/**/*.md
+!prompts/**/*.yaml
+*.log

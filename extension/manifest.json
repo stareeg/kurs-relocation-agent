@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Job Hunter — Copilot",
+  "version": "0.4.12",
+  "description": "Оценка вакансий на hh.ru, getmatch.ru и career.habr.com через API копайлота — вход по токену из Telegram-бота",
+  "permissions": ["storage", "alarms", "tabs"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://hh.ru/*",
+    "https://*.hh.ru/*",
+    "https://getmatch.ru/*",
+    "https://*.getmatch.ru/*",
+    "https://career.habr.com/*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "dist/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://career.habr.com/*"
+      ],
+      "js": ["dist/habr-xhr-interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://hh.ru/*",
+        "https://*.hh.ru/*",
+        "https://getmatch.ru/*",
+        "https://*.getmatch.ru/*",
+        "https://career.habr.com/*"
+      ],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dist/panel.css"],
+      "matches": [
+        "https://hh.ru/*",
+        "https://*.hh.ru/*",
+        "https://getmatch.ru/*",
+        "https://*.getmatch.ru/*",
+        "https://career.habr.com/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

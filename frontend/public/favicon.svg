@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
+  <rect width="40" height="40" rx="9" fill="url(#vacmatch-favicon-g)" />
+  <path d="M10 21 L17.5 28 L28 12" stroke="#fff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <circle cx="31" cy="9" r="3.4" fill="#fbbf24" stroke="#0f172a" stroke-width="1.6" />
+  <defs>
+    <linearGradient id="vacmatch-favicon-g" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f172a" />
+      <stop offset="1" stop-color="#4338ca" />
+    </linearGradient>
+  </defs>
+</svg>

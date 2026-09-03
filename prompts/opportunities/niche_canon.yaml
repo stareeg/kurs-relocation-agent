@@ -1,0 +1,35 @@
+# Канон написаний ниш (role_content_match.matched_niche).
+#
+# Модель за разные вызовы называет одну и ту же нишу по-разному — на проде MLOps/LLMOps
+# встречалось в 5 написаниях (189 упоминаний), RAG - в 3, AI Safety - в 2
+# (plans/scoring_precision_2026_08_17.md §1.7). Без схлопывания аналитика по нишам и любое
+# будущее обучение "какая ниша конвертится" не работают.
+#
+# Ключ — написание в нижнем регистре (сравнение через casefold + схлопнутые пробелы, см.
+# core/domains/opportunities/niche_canon.py); значение — канон для UI/агрегата. Короткий
+# расширяемый словарь известных синонимов, не попытка угадать нишу любой специальности:
+# неизвестное написание (в т.ч. ниши кандидата другой специальности — не про AI/ML) остаётся
+# как есть, тем же принципом, что core/domains/opportunities/skill_canon.py для навыков.
+aliases:
+  "mlops/llmops": "MLOps/LLMOps"
+  "mlops и llmops": "MLOps/LLMOps"
+  "llmops и mlops": "MLOps/LLMOps"
+  "mlops": "MLOps/LLMOps"
+  "llmops": "MLOps/LLMOps"
+  "llm-инфраструктура": "MLOps/LLMOps"
+  "llm инфраструктура": "MLOps/LLMOps"
+  "llm & rag": "LLM & RAG"
+  "llm и rag": "LLM & RAG"
+  "rag и graphrag": "LLM & RAG"
+  "rag": "LLM & RAG"
+  "graphrag": "LLM & RAG"
+  "llm": "LLM & RAG"
+  "ai safety & guardrails": "AI Safety & Guardrails"
+  "ai safety и guardrails": "AI Safety & Guardrails"
+  "ai safety": "AI Safety & Guardrails"
+  "guardrails": "AI Safety & Guardrails"
+  "agentic ai": "Agentic AI"
+  "разработка ai-агентов": "Agentic AI"
+  "разработка ai агентов": "Agentic AI"
+  "multi-agent systems": "Agentic AI"
+  "multi agent systems": "Agentic AI"

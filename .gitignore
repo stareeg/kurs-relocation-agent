@@ -1,0 +1,93 @@
+# =============================================================================
+# Career Copilot — .gitignore
+# В git идут: код, README.md, deploy/, prompts/, frontend/, extension/,
+# pyproject.toml/uv.lock/.dockerignore, tests/ — репозиторий публичный, CI собирает
+# Docker-образ и гоняет pytest из чистого git checkout, а не с диска владельца.
+# Локально остаются: секреты, резюме, планы, логи
+# =============================================================================
+
+# --- Python ---
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage/
+
+# --- Секреты и локальный конфиг ---
+.env
+.env.*
+# Образец настроек должен оставаться в clone (README / CI ссылаются на него)
+!.env.example
+!deploy/.env.example
+secrets/
+
+# --- Сборки фронта и расширения ---
+node_modules/
+**/node_modules/
+frontend/dist/
+extension/dist/
+*.tsbuildinfo
+
+# --- Личные данные и рабочие материалы (только корень репо) ---
+/resume/
+/plans/
+
+# --- Локальная документация и правила агента (не для публичного репо) ---
+CLAUDE.md
+.cursorrules
+.cursor/
+for_prompt.md
+ml_theory_brief_avito.md
+tests_command.md
+/docs/
+
+# --- История и легаси ---
+archive/
+legacy/
+
+# --- Бинарники ---
+*.pdf
+
+# --- Логи и артефакты прогонов ---
+logs/
+*.log
+_verify_out/
+
+# --- Рантайм-данные ---
+/data/
+frontend/data/
+
+# --- Временные скрипты ---
+**/_tmp_*.py
+# Разовые SQL-запросы для дебага прода (см. CLAUDE.md — scp на ВМ и запуск в postgres-контейнере)
+q.sql
+
+# --- IDE / ОС ---
+.claude/
+.idea/
+.vscode/
+.DS_Store
+
+# --- Playwright MCP: снимки DOM/консоли из живого исследования площадок, не часть проекта ---
+.playwright-mcp/
+
+# =============================================================================
+# Точечные ! (только то, что реально могло выпасть из-за широкого правила выше).
+# НЕ делать !api/** / !core/** — это снова включает __pycache__ внутри деревьев.
+# =============================================================================
+!frontend/.npmrc
+!frontend/package-lock.json
+!extension/package-lock.json
+!frontend/openapi.json
+!deploy/.env.example
+
+SIOnline-master
+.kilo

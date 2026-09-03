@@ -1,0 +1,1058 @@
+/*
+ * Палитра и типографика раздела «Мультиплеер» / «Хрюши и Волки».
+ * Подключать только из multiplayer-чанка — не в main shell.
+ */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Unbounded:wght@500;600;700&display=swap");
+
+/* SIGame-inspired game backdrop — deep navy radial gradient */
+
+/*
+ * Уровень раздела: типографика, общая для любой игры «Мультиплеера».
+ * Палитра — не здесь: она у каждой игры своя, см. .mp-skin-booth ниже (Э17.9).
+ */
+.mp-root {
+  --mp-font-display: "Unbounded", ui-sans-serif, system-ui, sans-serif;
+  --mp-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Типографическая шкала — крупнее, чем было (10–11px → 13–15px) */
+  --mp-text-2xs: 0.6875rem; /* 11px */
+  --mp-text-xs: 0.75rem; /* 12px */
+  --mp-text-sm: 0.8125rem; /* 13px */
+  --mp-text-base: 0.9375rem; /* 15px */
+  --mp-text-lg: 1.0625rem; /* 17px */
+  --mp-text-xl: 1.25rem; /* 20px */
+
+  font-family: var(--mp-font-mono);
+  font-size: var(--mp-text-sm);
+}
+
+/*
+ * Э35.7: видимая высота экрана для «всё на одном экране без скролла».
+ *  --mp-vh / --mp-vw пишутся в JS на корне раздела (см. useViewportHeight),
+ *  учитывают виртуальную клавиатуру через visualViewport.
+ *  --mp-dvh — браузерная единица (dvh), как fallback, если JS ещё не отработал.
+ *  Все сетки и min-высоты в разделе «Мультиплеер» выражаются через них,
+ *  а не в фиксированных px — чтобы на маленьких ноутах / ландшафтных телефонах
+ *  не было «уезжающих под экран» элементов.
+ */
+.mp-root {
+  --mp-dvh: 100dvh;
+  --mp-dvw: 100dvw;
+  --mp-vh: var(--mp-dvh);
+  --mp-vw: var(--mp-dvw);
+
+  min-height: var(--mp-dvh);
+  container-type: size;
+}
+
+/*
+ * Скин «кабинет найма» — палитра «Хрюш и Волков». Вторая игра заводит рядом свой
+ * .mp-skin-<имя> и не форкает этот файл. Вешается на тот же узел, что и .mp-root,
+ * чтобы переменные достались всему поддереву.
+ */
+.mp-skin-booth {
+  /* Кабинет: бумага / сукно / штамп / чернила / волк (только reveal) */
+  --mp-paper: #f3e5c2;
+  --mp-paper-edge: #e4d2a0;
+  --mp-paper-ink: #1e293b;
+  --mp-felt: #2f4a3c;
+  --mp-felt-deep: #243a2f;
+  --mp-felt-line: #3d5c4b;
+  --mp-stamp: #b42318;
+  --mp-stamp-ink: #8f1c14;
+  --mp-ink: #1e293b;
+  --mp-bulletin: #f5d76e;
+  --mp-bulletin-edge: #e0c04a;
+  --mp-wolf: #6b21a8;
+  --mp-plastic: #c5cdd6;
+  --mp-plastic-deep: #9aa5b1;
+  --mp-energy: #d97706;
+  --mp-chip-ok: #166534;
+  --mp-chip-bad: #9f1239;
+  --mp-chip-wait: #854d0e;
+  --mp-chip-offer: #1d4ed8;
+
+  /* SIGame-style glass panels */
+  --mp-glass-bg: linear-gradient(135deg, rgba(20, 24, 62, 0.45), rgba(5, 6, 31, 0.65));
+  --mp-glass-border: rgba(255, 255, 255, 0.15);
+  --mp-stage-bg: radial-gradient(ellipse at 50% 0%, #1a2a5e 0%, #0d1233 55%, #080b1f 100%);
+  --mp-header-bg: #04071b;
+  --mp-accent-text: #7da2ff;
+  --mp-sidebar-w: 17.5rem; /* 280px — как showmanProgress в SIGame */
+  --mp-booth-w: 20rem; /* 320px — кабинет хрюши */
+  --mp-side-w: 18.75rem; /* 300px — правая колонка действий + диалоги */
+
+  /* Тени текста на тёмном фоне (SIGame PlayerView / GameTable) */
+  --mp-shadow-text: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  --mp-shadow-text-lg: 2px 2px 4px rgba(0, 0, 0, 0.7);
+
+  color: var(--mp-ink);
+}
+
+/* Текст на игровой сцене */
+.mp-stage-text {
+  text-shadow: var(--mp-shadow-text);
+}
+
+.mp-stage-text-lg {
+  text-shadow: var(--mp-shadow-text-lg);
+}
+
+/* Игровая сцена — тёмный фон как в SIGame.
+ * container-type: size делает .mp-game-stage «контекстом высоты»: внутренние
+ * элементы могут выражать размеры в cqh и cqi, и они автоматически
+ * подстроятся под фактическую высоту экрана пользователя (Э35.7). */
+.mp-game-stage {
+  background: var(--mp-stage-bg);
+  border-radius: 0.625rem;
+  border: 1px solid var(--mp-glass-border);
+  container-type: size;
+  container-name: mp-stage;
+  /* Жёстко ограничиваем сцену видимой высотой: ничто не должно
+   * торчать ниже экрана даже без JS-перерасчёта. */
+  max-height: var(--mp-vh);
+  overflow: hidden;
+}
+
+/* Стеклянная панель (боковая колонка действий, шапка) */
+.mp-glass-panel {
+  background: var(--mp-glass-bg);
+  border: 1px solid var(--mp-glass-border);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: 0.625rem;
+}
+
+/* Шапка игры — фиксированные полосы как tableCaption в SIGame */
+.mp-game-header {
+  background: var(--mp-header-bg);
+  border: 1px solid var(--mp-glass-border);
+  border-radius: 0.625rem;
+  color: #fff;
+}
+
+/* Тело сцены: шапка → кабинка | центр | действия+диалоги → стол → реплики; пауза — оверлеем.
+ * Высота рядов выражена через minmax(0, 1fr) — средний ряд растянется, а шапка/стол/реплики
+ * получат только то, что реально нужно. Дополнительно: пропорции зависят от cqh, чтобы на
+ * маленьких экранах ничего не уезжало. */
+.mp-game-body {
+  display: grid;
+  /* Шапка/стол/реплики — auto (сжимаются до min-content), центр — растягивается. */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+@media (max-width: 1023px) {
+  .mp-game-body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mp-game-body > .mp-right-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 0.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mp-game-body {
+    grid-template-columns: var(--mp-booth-w) 1fr var(--mp-side-w);
+  }
+
+  .mp-game-body > .mp-booth-col {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  .mp-game-body > .mp-center-col {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+  }
+
+  .mp-game-body > .mp-right-col {
+    grid-column: 3;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 0.5rem;
+  }
+
+  .mp-game-body > .mp-right-col > .mp-action-sidebar {
+    min-height: 3.5rem;
+  }
+
+  .mp-game-body > .mp-candidate-table {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    min-height: 0;
+  }
+}
+
+.mp-header-band {
+  flex-shrink: 0;
+}
+
+.mp-header-timer {
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.mp-header-ticker {
+  min-height: 1.25rem;
+}
+
+.mp-header-ticker:empty {
+  display: none;
+}
+
+.mp-pause-overlay {
+  pointer-events: none;
+}
+
+/* Колода реплик и стол кандидатов больше не «забиты» фиксированной высотой:
+ * они занимают столько, сколько есть после шапки и боковых колонок.
+ * На маленьких высотах карточки автоматически уменьшаются (см. .mp-seat-card ниже). */
+.mp-reply-deck-slot {
+  min-height: 0;
+}
+
+.mp-reply-deck {
+  min-height: 0;
+}
+
+.mp-candidate-table {
+  min-height: 0;
+}
+
+/* SIGame tableCaption — полоска с названием фазы */
+.mp-phase-caption-bar {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  min-height: 2rem;
+}
+
+/* Turn guide — главный якорь внимания */
+.mp-turn-guide--active {
+  background: linear-gradient(90deg, rgba(255, 124, 30, 0.22), rgba(255, 124, 30, 0.06));
+  border-left: 3px solid var(--mp-energy);
+  padding-left: calc(0.75rem - 3px);
+  border-radius: 0.25rem;
+}
+
+.mp-turn-guide--waiting {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  border-radius: 0.25rem;
+}
+
+.mp-turn-guide--paused {
+  background: rgba(245, 215, 110, 0.12);
+}
+
+.mp-question-banner {
+  border-left: 3px solid var(--mp-energy);
+  padding-left: 0.75rem;
+}
+
+/* Подпись статуса на карточке кандидата */
+.mp-seat-status {
+  position: absolute;
+  top: 0.25rem;
+  left: 50%;
+  z-index: 2;
+  translate: -50% 0;
+  font-family: var(--mp-font-mono);
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.85);
+  max-width: calc(100% - 0.5rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-seat-status--empty {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mp-seat-ribbon {
+  position: absolute;
+  top: -0.625rem;
+  left: 50%;
+  z-index: 10;
+  translate: -50% 0;
+  font-family: var(--mp-font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+}
+
+.mp-seat-ribbon--focus {
+  background: var(--mp-bulletin);
+  color: var(--mp-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Чья очередь — мягкое мигание как blink в SIGame RoundTable */
+.mp-seat-card--turn {
+  animation: mp-seat-turn 1.2s ease-in-out infinite;
+}
+
+@keyframes mp-seat-turn {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(255, 124, 30, 0),
+      0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 124, 30, 0.55),
+      0 4px 16px rgba(255, 124, 30, 0.25);
+  }
+}
+
+/* Колода карт — веер внизу */
+.mp-card-deck {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0;
+  padding: 0.5rem 0;
+}
+
+.mp-card-deck > * {
+  margin-left: -1.25rem;
+  transition: transform 150ms ease, z-index 0ms;
+}
+
+.mp-card-deck > *:first-child {
+  margin-left: 0;
+}
+
+.mp-card-deck > *:hover {
+  transform: translateY(-8px) scale(1.04);
+  z-index: 10;
+}
+
+/* Карточка кандидата за столом — размеры через cqi/cqh, чтобы масштабироваться
+ * с шириной и высотой доступного места. */
+.mp-seat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  /* Ширина карточки: масштабируется по высоте сцены (на низких экранах
+   * карточки становятся компактнее, чтобы влез стол + реплики + шапка). */
+  width: clamp(5rem, 11cqh, 9rem);
+  min-height: clamp(7rem, 16cqh, 12rem);
+  padding: 1.375rem 0.75rem 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--mp-glass-border);
+  background: linear-gradient(160deg, rgba(47, 74, 60, 0.85), rgba(36, 58, 47, 0.95));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  touch-action: manipulation;
+}
+
+.mp-seat-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  pointer-events: auto;
+}
+
+.mp-seat-card--selectable {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.mp-seat-card--selectable:not(:disabled):hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow:
+    inset 0 0 24px rgba(255, 255, 255, 0.1),
+    0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.mp-seat-card--filled {
+  /* Занятые карточки тянутся по высоте под содержимое, не выше clamp'а сверху. */
+  height: auto;
+}
+
+.mp-seat-card__marks {
+  min-height: 0.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-mark-dot--empty {
+  width: 0.5rem;
+  height: 0.5rem;
+  visibility: hidden;
+}
+
+.mp-seat-card__deck {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.mp-seat-card__deck .mp-card-deck {
+  padding: 0;
+}
+
+.mp-seat-card--focused {
+  border-color: var(--mp-bulletin);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--mp-bulletin) 50%, transparent),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.mp-seat-card--empty {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--mp-bulletin) 60%, transparent);
+  background: linear-gradient(160deg, rgba(36, 58, 47, 0.6), rgba(36, 58, 47, 0.8));
+  cursor: pointer;
+}
+
+/* Боковая колонка действий */
+.mp-action-sidebar {
+  width: var(--mp-sidebar-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+/*
+ * SIGame-style кнопки: градиент, text-shadow, белый flash на :active.
+ * Источник: SIOnline style.scss + AnswerValidationButtons.scss + SideControlPanel.css
+ */
+.mp-btn {
+  font-family: var(--mp-font-mono);
+  font-size: var(--mp-text-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  border: none;
+  border-radius: 0.25rem;
+  padding: 0.5rem 1rem;
+  color: #fff;
+  text-shadow: var(--mp-shadow-text);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    transform 0.1s ease,
+    box-shadow 0.2s ease;
+  user-select: none;
+}
+
+.mp-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.mp-btn:not(:disabled):active {
+  background: #fff !important;
+  color: #0a3fa4 !important;
+  text-shadow: none;
+  transition: initial;
+}
+
+.mp-btn-standard {
+  background: linear-gradient(180deg, #255adc 0%, #0a3fa4 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.mp-btn-standard:not(:disabled):hover {
+  background: linear-gradient(180deg, #2860ef 0%, #276ced 100%);
+}
+
+.mp-btn-primary {
+  background: linear-gradient(180deg, #c73b1c 0%, #e26f1d 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.mp-btn-primary:not(:disabled):hover {
+  background: linear-gradient(180deg, #ff4b23 0%, #ff7c1e 100%);
+}
+
+.mp-btn-accept {
+  background: linear-gradient(180deg, #2d8a4e 0%, #166534 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.mp-btn-accept:not(:disabled):hover {
+  background: linear-gradient(180deg, #3cb371 0%, #228b4a 100%);
+}
+
+.mp-btn-reject {
+  background: linear-gradient(180deg, #c73b1c 0%, #9f1239 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.mp-btn-reject:not(:disabled):hover {
+  background: linear-gradient(180deg, #e04530 0%, #b42318 100%);
+}
+
+/* Прозрачная кнопка тулбара (SideControlPanel) */
+.mp-btn-glass {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-shadow: none;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.mp-btn-glass:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.mp-btn-glass:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.38) !important;
+  color: #fff !important;
+}
+
+/* Интерактивная ячейка (RoundTable.scss) */
+.mp-cell {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.375rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mp-cell--selectable:not(:disabled):hover {
+  transform: scale(1.03);
+  box-shadow:
+    inset 0 0 20px rgba(255, 255, 255, 0.08),
+    0 0 16px rgba(255, 255, 255, 0.2);
+}
+
+.mp-cell--selectable:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform 0.1s;
+}
+
+.mp-cell--active {
+  border-color: var(--mp-bulletin);
+  background: rgba(245, 215, 110, 0.15);
+  box-shadow:
+    inset 0 0 16px rgba(245, 215, 110, 0.2),
+    0 0 12px rgba(245, 215, 110, 0.25);
+}
+
+/* Семантические состояния карточки места (PlayerView.scss) */
+.mp-seat-card--interview {
+  background: linear-gradient(160deg, rgba(22, 101, 52, 0.55), rgba(15, 70, 38, 0.75));
+  border-color: rgba(74, 222, 128, 0.45);
+  box-shadow: 0 4px 14px rgba(22, 101, 52, 0.35);
+}
+
+.mp-seat-card--rejected {
+  background: linear-gradient(160deg, rgba(159, 18, 57, 0.5), rgba(120, 14, 44, 0.7));
+  border-color: rgba(251, 113, 133, 0.4);
+  opacity: 0.85;
+}
+
+.mp-seat-card--offer {
+  background: linear-gradient(160deg, rgba(29, 78, 216, 0.5), rgba(20, 55, 150, 0.7));
+  border-color: rgba(96, 165, 250, 0.45);
+  box-shadow: 0 4px 14px rgba(29, 78, 216, 0.3);
+}
+
+.mp-seat-card--answered {
+  background: linear-gradient(160deg, rgba(107, 33, 168, 0.45), rgba(76, 22, 120, 0.65));
+  border-color: rgba(192, 132, 252, 0.4);
+}
+
+.mp-seat-card--stamped {
+  background: linear-gradient(160deg, rgba(180, 140, 30, 0.45), rgba(140, 105, 20, 0.65));
+  border-color: rgba(245, 215, 110, 0.5);
+}
+
+/* Итог закрытого слота на SlotStrip */
+.mp-slot-outcome {
+  font-size: var(--mp-text-base);
+}
+.mp-slot-outcome--offer {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: linear-gradient(160deg, rgba(29, 78, 216, 0.55), rgba(20, 55, 150, 0.75));
+  color: #bfdbfe;
+}
+.mp-slot-outcome--reject {
+  border-color: rgba(251, 113, 133, 0.45);
+  background: linear-gradient(160deg, rgba(159, 18, 57, 0.55), rgba(120, 14, 44, 0.75));
+  color: #fecdd3;
+}
+.mp-slot-outcome--interview {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: linear-gradient(160deg, rgba(22, 101, 52, 0.55), rgba(15, 70, 38, 0.75));
+  color: #bbf7d0;
+}
+.mp-slot-outcome--mixed {
+  border-color: rgba(245, 215, 110, 0.5);
+  background: linear-gradient(160deg, rgba(180, 140, 30, 0.5), rgba(140, 105, 20, 0.7));
+  color: #fef3c7;
+}
+.mp-slot-outcome--quiet {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.mp-seat-card--selectable:not(:disabled):hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow:
+    inset 0 0 24px rgba(255, 255, 255, 0.1),
+    0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Маркер состояния — точка вместо текстового бейджа */
+.mp-mark-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+/* Появление контента (ShowmanReplic replicAppear) */
+@keyframes mp-enter {
+  0% {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.mp-enter {
+  animation: mp-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* CTA-пульсация (SideControlPanel demoSlowBlink) */
+@keyframes mp-demo-blink {
+  0%,
+  100% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  50% {
+    filter: brightness(1.25);
+    transform: scale(1.04);
+  }
+}
+
+.mp-demo-blink:not(:disabled) {
+  animation: mp-demo-blink 2.2s ease-in-out infinite;
+}
+
+.mp-display {
+  font-family: var(--mp-font-display);
+  letter-spacing: -0.02em;
+}
+
+.mp-mono {
+  font-family: var(--mp-font-mono);
+}
+
+@keyframes mp-seat-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--mp-bulletin) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--mp-bulletin) 0%, transparent);
+  }
+}
+
+.mp-seat-pulse {
+  animation: mp-seat-pulse 1.6s ease-in-out infinite;
+  border-radius: 9999px;
+}
+
+/*
+ * Э35.2: единый аффорданс кликабельности на весь стол.
+ * .mp-actionable — «сюда можно нажать» (постоянная тонкая рамка тоном бюллетеня).
+ * .mp-act-now    — «нажми сюда сейчас» (мягкая пульсация, форму берёт от элемента —
+ *                  в отличие от .mp-seat-pulse, который скругляет под фишку).
+ * Неактивное состояние приёма не имеет: приглушение + cursor-default задаются в компоненте.
+ */
+.mp-actionable {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mp-bulletin) 60%, transparent);
+}
+
+@keyframes mp-act-now {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--mp-bulletin) 60%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--mp-bulletin) 0%, transparent);
+  }
+}
+
+.mp-act-now {
+  animation: mp-act-now 1.6s ease-in-out infinite;
+}
+
+/* Э13: штамп — короткий slam на нажатии */
+@keyframes mp-stamp-slam {
+  0% {
+    transform: translateY(-6px) scale(1.04);
+  }
+  55% {
+    transform: translateY(3px) scale(0.97);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mp-stamp-slam {
+  animation: mp-stamp-slam 220ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+/* Отпечаток на бумаге: появляется с лёгким «чернильным» сжатием */
+@keyframes mp-imprint-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(var(--mp-rot, 0deg));
+    filter: blur(0.4px);
+  }
+  100% {
+    opacity: 0.82;
+    transform: scale(1) rotate(var(--mp-rot, 0deg));
+    filter: blur(0);
+  }
+}
+
+.mp-imprint {
+  --mp-rot: 0deg;
+  transform: rotate(var(--mp-rot));
+  animation: mp-imprint-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Переворот карты / фишки */
+@keyframes mp-card-deal {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) rotateY(-90deg) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateY(0deg) scale(1);
+  }
+}
+
+.mp-card-deal {
+  transform-origin: center bottom;
+  animation: mp-card-deal 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mp-card-flip-scene {
+  perspective: 640px;
+}
+
+.mp-card-flip-inner {
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.4, 0.05, 0.2, 1);
+}
+
+.mp-card-flip-inner--face {
+  transform: rotateY(180deg);
+}
+
+.mp-card-face {
+  backface-visibility: hidden;
+}
+
+/* Газета-итог: вход + лёгкий скан линии */
+@keyframes mp-ticker-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mp-ticker-scan {
+  0% {
+    transform: translateX(-12%);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateX(112%);
+    opacity: 0;
+  }
+}
+
+.mp-ticker {
+  position: relative;
+  animation: mp-ticker-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mp-ticker::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--mp-bulletin) 55%, transparent),
+    transparent
+  );
+  animation: mp-ticker-scan 700ms ease-out 120ms both;
+}
+
+/* Э35.5: полоска прогресса фазы — одна CSS-анимация на всю фазу, без тика в React */
+@keyframes mp-phase-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.mp-phase-progress {
+  animation: mp-phase-progress linear forwards;
+}
+
+/* Э19.8: курсор реплики, которая печатается стримом модели */
+@keyframes mp-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.mp-caret {
+  margin-left: 1px;
+  animation: mp-caret 900ms steps(1, end) infinite;
+}
+
+/* Э21.3: стряска кабинки при ударе штампом */
+@keyframes mp-booth-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px) rotate(-0.5deg);
+  }
+  40% {
+    transform: translateX(3px) rotate(0.5deg);
+  }
+  60% {
+    transform: translateX(-2px) rotate(-0.3deg);
+  }
+  80% {
+    transform: translateX(2px) rotate(0.3deg);
+  }
+}
+
+.mp-booth-shake {
+  animation: mp-booth-shake 180ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* Э21.2: красная нить заговора — пульсирующий пунктир */
+@keyframes mp-thread-pulse {
+  0%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  50% {
+    stroke-dashoffset: 8;
+    opacity: 0.7;
+  }
+}
+
+.mp-thread-line {
+  animation: mp-thread-pulse 1s linear infinite;
+}
+
+@keyframes mp-thread-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.mp-thread-fixed {
+  stroke-dasharray: 100;
+  animation: mp-thread-draw 0.3s ease-out forwards;
+}
+
+/* Э21.5: паутинный паттерн для ghosted */
+.mp-seat-card--ghosted {
+  background: linear-gradient(160deg, rgba(120, 120, 120, 0.4), rgba(80, 80, 80, 0.6));
+  border-color: rgba(180, 180, 180, 0.3);
+  opacity: 0.7;
+  position: relative;
+}
+
+.mp-seat-card--ghosted::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M0 0L10 10M10 0L0 10M0 10L10 0M10 10L0 0' stroke='rgba(255,255,255,0.08)' stroke-width='0.5'/%3E%3C/svg%3E");
+  background-size: 20px 20px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-seat-pulse,
+  .mp-act-now,
+  .mp-stamp-slam,
+  .mp-imprint,
+  .mp-card-deal,
+  .mp-ticker,
+  .mp-ticker::after,
+  .mp-caret,
+  .mp-enter,
+  .mp-demo-blink,
+  .mp-seat-card--turn,
+  .mp-booth-shake,
+  .mp-thread-line,
+  .mp-thread-fixed {
+    animation: none !important;
+  }
+
+  .mp-seat-card--turn {
+    box-shadow: 0 0 0 2px rgba(255, 124, 30, 0.45);
+  }
+
+  /* Без пульсации «нажми сейчас» остаётся видимой статичной подсветкой. */
+  .mp-act-now {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-bulletin) 45%, transparent);
+  }
+
+  .mp-card-flip-inner {
+    transition: none !important;
+  }
+
+  .mp-thread-fixed {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ============================================================================
+ * Э35.7: укладываем «всё на одном экране» динамически.
+ *
+ * `.mp-game-stage` объявлен container-type: size, поэтому .mp-stage-h-* ниже
+ * срабатывают по реальной высоте сцены (= реальная высота экрана минус
+ * шапка/футер приложения). Сцены:
+ *  - ≥ 820px: всё в полный рост (десктоп, большие ноуты, ландшафтные планшеты)
+ *  - 700–819px: средний ноут 13", чуть ужимаем
+ *  - 600–699px: маленький ноут / split view — скрываем «газету»-тикер,
+ *               сжимаем шапку, разрешаем карточкам стола сжиматься
+ *  - < 600px: телефон в горизонтали, плотный режим — реплики показываем
+ *             только как «лента», без больших карточек-вееров
+ * ========================================================================== */
+@container mp-stage (max-height: 700px) {
+  .mp-phase-caption-bar {
+    min-height: 1.625rem;
+    padding-block: 0.25rem;
+  }
+  .mp-game-header > .border-t:not(.mp-header-ticker) {
+    padding-block: 0.25rem;
+  }
+  .mp-seat-card {
+    width: clamp(3.5rem, 7cqh, 5.5rem);
+    min-height: clamp(5.5rem, 12cqh, 8.5rem);
+    padding-top: 1.125rem;
+  }
+}
+
+@container mp-stage (max-height: 620px) {
+  /* На плотных экранах убираем второстепенные полосы. */
+  .mp-header-ticker {
+    display: none;
+  }
+  .mp-game-header > :nth-child(2) {
+    padding-block: 0.125rem;
+  }
+  /* Шапка-комната (WolvesTable.tsx, первая строка) — оставляем, но плотнее. */
+  .mp-game-stage > .gap-2 > .flex-wrap {
+    gap: 0.25rem 0.5rem;
+  }
+  .mp-seat-card {
+    width: clamp(3.25rem, 6cqh, 5rem);
+    min-height: clamp(5rem, 11cqh, 7.5rem);
+    padding: 1rem 0.375rem 0.375rem;
+    gap: 0.125rem;
+  }
+  .mp-seat-card__deck {
+    min-height: 0;
+  }
+  .mp-candidate-table {
+    padding-block: 0.5rem;
+  }
+  .mp-candidate-table > p {
+    margin-bottom: 0.25rem;
+  }
+  /* В кнопках шапки оставляем только иконки, текст спрячем. */
+  .mp-game-stage .shrink-0 .mp-btn :where(span, .sr-only) {
+    font-size: 0;
+  }
+}
+
+@container mp-stage (max-height: 520px) {
+  /* Ультра-плотный режим: реплики скрываем, остаётся только стол. */
+  .mp-reply-deck-slot {
+    display: none;
+  }
+  .mp-candidate-table {
+    padding-block: 0.25rem;
+  }
+}
+
+/* На очень низкой ширине (телефон) — те же правила, что и для низкой высоты. */
+@container mp-stage (max-width: 520px) {
+  .mp-seat-card {
+    width: clamp(3.25rem, 14cqh, 4.5rem);
+    min-height: clamp(5.5rem, 14cqh, 7rem);
+  }
+  .mp-game-header .mp-display {
+    font-size: var(--mp-text-sm);
+  }
+}
+

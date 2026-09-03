@@ -1,0 +1,271 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "katex/dist/katex.min.css";
+
+/* Дизайн-система: монохромная база Slate (ux_plan.md, раздел 5).
+   Цвет — только акценты/статусы. Радиусы: карточки rounded-xl, кнопки rounded-lg. */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.129 0.042 264.695);
+  --primary: oklch(0.208 0.042 265.755);
+  --primary-foreground: oklch(0.984 0.003 247.858);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.984 0.003 247.858);
+  --sidebar-foreground: oklch(0.129 0.042 264.695);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
+
+  /* Статусная палитра (D-04): 5 тонов вместо магических emerald/amber/rose/sky/violet классов
+     по 15 файлам. Значения = соответствующие оттенки Tailwind (50/200/500/700), чтобы конвертация
+     не поменяла вид экрана — поменялось только имя. soft/line/fg — триплет чипа (фон/рамка/текст),
+     dot — точка-индикатор (StageChain, mastery). Смысл тона см. features/jobs/funnel.ts:
+     strong = сильный сигнал (сильный фит, реальна удалёнка, offer accepted), good = позитив
+     послабее (подать, релокация, оффер «думаю»), warn = осторожно (возможно, гибрид, условно),
+     bad = негатив (офис, отказ, вряд ли), info = нейтральный факт-тег (валютка, созвон назначен). */
+  --status-strong-soft: oklch(97.9% 0.021 166.113);
+  --status-strong-line: oklch(90.5% 0.093 164.15);
+  --status-strong-fg: oklch(50.8% 0.118 165.612);
+  --status-strong-dot: oklch(69.6% 0.17 162.48);
+  --status-good-soft: oklch(97.7% 0.013 236.62);
+  --status-good-line: oklch(90.1% 0.058 230.902);
+  --status-good-fg: oklch(50% 0.134 242.749);
+  --status-good-dot: oklch(68.5% 0.169 237.323);
+  --status-warn-soft: oklch(98.7% 0.022 95.277);
+  --status-warn-line: oklch(92.4% 0.12 95.746);
+  --status-warn-fg: oklch(55.5% 0.163 48.998);
+  --status-warn-dot: oklch(76.9% 0.188 70.08);
+  --status-bad-soft: oklch(96.9% 0.015 12.422);
+  --status-bad-line: oklch(89.2% 0.058 10.001);
+  --status-bad-fg: oklch(51.4% 0.222 16.935);
+  --status-bad-dot: oklch(64.5% 0.246 16.439);
+  --status-info-soft: oklch(96.9% 0.016 293.756);
+  --status-info-line: oklch(89.4% 0.057 293.283);
+  --status-info-fg: oklch(49.1% 0.27 292.581);
+  --status-info-dot: oklch(60.6% 0.25 292.717);
+
+  /* Категориальные слоты рядов (V-09, план market_redesign_v3 п. 4.2): для сущностей на одном
+     графике (например, разные офферы на оси денег, разные метрики отклика резюме) — не для
+     состояния. Слот сущности фиксирует вызывающий по полному перечню сущностей, а не по месту
+     в отфильтрованном подмножестве, иначе фильтр перекрашивает выживших — см.
+     `features/market/charts/series-tokens.ts`. Тройка проверена `dataviz/validate_palette.js`
+     (не на глаз): полоса светлоты и порог цветности пройдены, ΔE 8.2 при дальтонизме (впритык к
+     порогу — поэтому прямые подписи рядов обязательны, план п. 4.2), контраст ≥ 3:1 к белой
+     поверхности. `--status-*-dot` для рядов запрещён: контраст 2.08–2.64, провал по полосе
+     светлоты. */
+  --series-1: oklch(50.4% 0.128 245.46);
+  --series-2: oklch(51.3% 0.11 163.56);
+  --series-3: oklch(55.7% 0.158 45.36);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --animate-hints-on: hints-on 2.4s ease-in-out infinite;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-status-strong-soft: var(--status-strong-soft);
+  --color-status-strong-line: var(--status-strong-line);
+  --color-status-strong-fg: var(--status-strong-fg);
+  --color-status-strong-dot: var(--status-strong-dot);
+  --color-status-good-soft: var(--status-good-soft);
+  --color-status-good-line: var(--status-good-line);
+  --color-status-good-fg: var(--status-good-fg);
+  --color-status-good-dot: var(--status-good-dot);
+  --color-status-warn-soft: var(--status-warn-soft);
+  --color-status-warn-line: var(--status-warn-line);
+  --color-status-warn-fg: var(--status-warn-fg);
+  --color-status-warn-dot: var(--status-warn-dot);
+  --color-status-bad-soft: var(--status-bad-soft);
+  --color-status-bad-line: var(--status-bad-line);
+  --color-status-bad-fg: var(--status-bad-fg);
+  --color-status-bad-dot: var(--status-bad-dot);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-info-line: var(--status-info-line);
+  --color-status-info-fg: var(--status-info-fg);
+  --color-status-info-dot: var(--status-info-dot);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+}
+
+/* Токены движения (часть G): поверх tw-animate-css enter/fade/slide/zoom.
+   Только при no-preference — при reduce классы no-op, элементы просто на месте. */
+@media (prefers-reduced-motion: no-preference) {
+  .motion-rise {
+    --tw-enter-opacity: 0;
+    --tw-enter-translate-y: 0.5rem;
+    --tw-animation-duration: 180ms;
+    --tw-animation-fill-mode: both;
+    animation: enter 180ms ease both;
+  }
+
+  .motion-fade {
+    --tw-enter-opacity: 0;
+    --tw-animation-duration: 120ms;
+    --tw-animation-fill-mode: both;
+    animation: enter 120ms ease both;
+  }
+
+  .motion-pop {
+    --tw-enter-scale: 0.97;
+    --tw-animation-duration: 140ms;
+    --tw-animation-fill-mode: both;
+    animation: enter 140ms ease both;
+  }
+
+  .motion-stagger-0 {
+    --tw-animation-delay: 0ms;
+    animation-delay: 0ms;
+  }
+
+  .motion-stagger-1 {
+    --tw-animation-delay: 40ms;
+    animation-delay: 40ms;
+  }
+
+  .motion-stagger-2 {
+    --tw-animation-delay: 80ms;
+    animation-delay: 80ms;
+  }
+
+  .motion-stagger-3 {
+    --tw-animation-delay: 120ms;
+    animation-delay: 120ms;
+  }
+
+  .motion-stagger-4 {
+    --tw-animation-delay: 160ms;
+    animation-delay: 160ms;
+  }
+
+  .motion-stagger-5 {
+    --tw-animation-delay: 200ms;
+    animation-delay: 200ms;
+  }
+
+  .motion-stagger-6 {
+    --tw-animation-delay: 240ms;
+    animation-delay: 240ms;
+  }
+
+  .motion-stagger-7 {
+    --tw-animation-delay: 280ms;
+    animation-delay: 280ms;
+  }
+
+  /* Чип вложения, пока грузится (план §6.1) — диагональный блик поверх превью. */
+  .motion-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 30%,
+      color-mix(in oklab, white 55%, transparent) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: attachment-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes attachment-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+
+/* D-14: reduced-motion должен гасить не только наши .motion-*, но и tw-animate-css
+   (.animate-in/.animate-out — вход/выход Dialog/AlertDialog/Sheet/Popover/DropdownMenu/Select/
+   Tooltip). У tw-animate-css своей проверки prefers-reduced-motion нет — без этого блока модалки
+   и попапы анимировались бы независимо от системной настройки. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-out {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Скролл формы резюме: не якорить viewport, когда textarea выше меняет высоту. */
+.resume-form-scroll,
+[data-resume-scroll] {
+  overflow-anchor: none;
+}
+
+/* Секции формы резюме: изоляция layout от соседей без content-visibility.
+ * `content-visibility: auto` при скролле то прятал, то внезапно раскладывал сотни
+ * инпутов — скроллбар прыгал, кадры рвались. `contain` дешевле и без скачков высоты. */
+.resume-section-body {
+  contain: layout style;
+}
+
+/* Sonner: slide-in снизу справа, длительность как у motion-rise (шаг 48). */
+[data-sonner-toaster][data-y-position="bottom"] [data-sonner-toast] {
+  transition-duration: 180ms !important;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

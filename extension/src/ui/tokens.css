@@ -1,0 +1,65 @@
+/* Дизайн-токены расширения. Зеркало палитры web (Slate/Zinc + приглушённая статус-пастель).
+   Определяются на :host, чтобы каскадом доходить в shadow DOM панели. */
+:host,
+.jh-root {
+  /* поверхности */
+  --jh-bg: #ffffff;
+  --jh-bg-subtle: #f8fafc;        /* slate-50 */
+  --jh-bg-muted: #f1f5f9;         /* slate-100 */
+  --jh-border: #e2e8f0;           /* slate-200 */
+  --jh-border-strong: #cbd5e1;    /* slate-300 */
+
+  /* иерархия текста: 900 значения / 700 текст / 500 подписи / 400 метаданные */
+  --jh-fg: #0f172a;               /* slate-900 — число, значения */
+  --jh-fg-body: #334155;          /* slate-700 — текст списков, вердикт */
+  --jh-fg-muted: #64748b;         /* slate-500 — подписи, заголовки секций */
+  --jh-fg-meta: #94a3b8;          /* slate-400 — url, сноски */
+
+  /* статусы — приглушённая пастель (зеркало web RECO: 50 фон / 700 текст / 200 рамка) */
+  --jh-pos-bg: #ecfdf5;           /* emerald-50 */
+  --jh-pos-fg: #047857;           /* emerald-700 */
+  --jh-pos-border: #a7f3d0;       /* emerald-200 */
+  --jh-warn-bg: #fffbeb;          /* amber-50 */
+  --jh-warn-fg: #b45309;          /* amber-700 */
+  --jh-warn-border: #fde68a;      /* amber-200 */
+  --jh-neg-bg: #fff1f2;           /* rose-50 */
+  --jh-neg-fg: #be123c;           /* rose-700 */
+  --jh-neg-border: #fecdd5;       /* rose-200 */
+  --jh-info-bg: #f0f9ff;          /* sky-50  (reco «Подать», статус «Отклик») */
+  --jh-info-fg: #0369a1;          /* sky-700 */
+  --jh-info-border: #bae6fd;      /* sky-200 */
+  --jh-screen-bg: #f5f3ff;        /* violet-50 (статус «Скрининг») */
+  --jh-screen-fg: #6d28d9;        /* violet-700 */
+  --jh-screen-border: #ddd6fe;    /* violet-200 */
+  --jh-final-bg: #eef2ff;         /* indigo-50 (статус «Финал») */
+  --jh-final-fg: #4338ca;         /* indigo-700 */
+  --jh-final-border: #c7d2fe;     /* indigo-200 */
+
+  /* точки-маркеры списков (зеркало web BulletList: 500-уровень) */
+  --jh-dot-pos: #10b981;          /* emerald-500 — плюсы */
+  --jh-dot-warn: #f59e0b;         /* amber-500 — минусы */
+  --jh-dot-neg: #f43f5e;          /* rose-500 — флаги */
+
+  /* спокойный акцент = первичная кнопка web (slate-900) */
+  --jh-accent: #0f172a;           /* slate-900 */
+  --jh-accent-hover: #1e293b;     /* slate-800 */
+  --jh-accent-fg: #ffffff;
+  --jh-ring: rgba(15, 23, 42, 0.15); /* фокус-кольцо slate */
+
+  /* скругления: панель rounded-xl, контролы rounded-lg */
+  --jh-radius-panel: 12px;
+  --jh-radius-control: 8px;
+
+  /* ритм — U-05/U-06 блоки и тело панели */
+  --jh-gap: 16px;
+  --jh-pad: 16px;
+
+  /* типографика */
+  --jh-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --jh-text-sm: 13px;
+  --jh-text-xs: 12px;
+
+  /* движение и тень */
+  --jh-transition: 200ms ease;
+  --jh-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.25), 0 2px 8px -2px rgba(15, 23, 42, 0.08);
+}

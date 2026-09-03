@@ -1,0 +1,97 @@
+{
+  "personal": {
+    "full_name": "Анна Смирнова",
+    "gender": "Женщина",
+    "birth_date": "1993-08-22",
+    "city": "Санкт-Петербург",
+    "work_countries": ["Россия"],
+    "relocation": "Не готов"
+  },
+  "contacts": {
+    "phone": "+7 911 000-00-11",
+    "phone_preferred": false,
+    "email": "anna.smirnova.example@example.com",
+    "telegram": "@anna_smoke_frontend",
+    "site": "",
+    "other": []
+  },
+  "position": {
+    "title": "Senior Frontend Developer",
+    "salary_min": 280000,
+    "salary_comfortable": 320000,
+    "salary_currency": "RUB",
+    "employment": "Полная занятость",
+    "schedule": ["Удалённо", "Гибрид"],
+    "grade": ["Senior"],
+    "company_types": ["Продуктовая компания"],
+    "categories": ["Frontend"]
+  },
+  "search_criteria": {
+    "niches": ["Frontend", "Design systems", "E-commerce"],
+    "target_companies": ["Авито", "Ozon"],
+    "avoid_companies": ["Аутсорс", "Body leasing"],
+    "dealbreakers": [
+      "Обязательный ежедневный офис 5/5",
+      "Только jQuery без современного стека"
+    ],
+    "notes": "Ищу продуктовую команду с сильным UI-культурой, TypeScript обязателен."
+  },
+  "experience": [
+    {
+      "company": "ООО «ВебПродукт»",
+      "company_url": "https://example.com",
+      "industry": "E-commerce",
+      "position": "Senior Frontend Developer",
+      "start": "2021-04",
+      "end": "",
+      "current": true,
+      "area": "Санкт-Петербург",
+      "description": "Разработка витрины на React 18 и TypeScript, микрофронтенды на Module Federation.\nВнедрила design system на Radix + Tailwind, ускорила релизы UI на 30%.\nПокрыла критичные сценарии E2E-тестами Playwright, снизила регрессии в checkout.\nМенторила двух мидл-разработчиков, вела код-ревью и RFC по архитектуре фронта."
+    },
+    {
+      "company": "ООО «Стартап Лаб»",
+      "company_url": "",
+      "industry": "B2B SaaS",
+      "position": "Frontend Developer",
+      "start": "2018-02",
+      "end": "2021-03",
+      "current": false,
+      "area": "Санкт-Петербург",
+      "description": "SPA на Vue 2 и позже React, интеграция REST API, оптимизация бандла Webpack.\nНастроила CI для фронта, ввела Storybook для UI-компонентов."
+    }
+  ],
+  "experience_total": "7 лет 2 месяца",
+  "education_level": "Высшее",
+  "education": [
+    {
+      "degree": "Бакалавр",
+      "year": "2017",
+      "institution": "Примерский Политех",
+      "faculty": "Информатика и вычислительная техника",
+      "specialization": "Программная инженерия"
+    }
+  ],
+  "courses": [
+    {
+      "name": "Advanced React Patterns",
+      "organization": "Пример Онлайн",
+      "year": "2022"
+    }
+  ],
+  "key_skills": [
+    "React",
+    "TypeScript",
+    "Next.js",
+    "Playwright",
+    "CSS",
+    "Webpack",
+    "Vitest",
+    "Figma",
+    "Accessibility"
+  ],
+  "languages": [
+    { "name": "Русский", "level": "Родной" },
+    { "name": "Английский", "level": "B2" }
+  ],
+  "about": "Frontend-разработчик с фокусом на продуктовые интерфейсы и design systems. Люблю TypeScript, чистую архитектуру компонентов и автотесты. Ищу удалёнку в сильной продуктовой команде."
+}

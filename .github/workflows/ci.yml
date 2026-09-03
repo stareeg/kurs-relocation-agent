@@ -1,0 +1,118 @@
+name: CI
+
+# Ловит регрессии до прода: ruff, pytest, тесты расширения, docker build.
+# `-m db` (RLS-фундамент) гоняется отдельным шагом против postgres:18 service-контейнера
+# после применения миграций — эти тесты бьют в живой Postgres (RLS нельзя замокать).
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      # postgres:18 — тот же образ, что deploy/compose.yaml. POSTGRES_USER здесь
+      # автоматически суперпользователь (initdb-бутстрап официального образа), поэтому
+      # 0095_accounts.sql может сам завести роли app_rls/app_admin без отдельного шага.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: copilot
+          POSTGRES_PASSWORD: copilot
+          POSTGRES_DB: copilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U copilot -d copilot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      PYTHONUTF8: "1"
+      # Часть тестов гейтит по «ключ настроен» (get_settings().openrouter_api_key), не по
+      # реальному вызову — сам LLM-порт в этих тестах подменяется FakeLlm. Пустой ключ = 401
+      # у настоящего OpenRouter не грозит, значение никогда не используется для сети.
+      OPENROUTER_API_KEY: sk-or-v1-ci-placeholder-0000000000000000000000000000000000000000
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: copilot
+      POSTGRES_PASSWORD: copilot
+      POSTGRES_DB: copilot
+      POSTGRES_SSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - run: uv sync
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check
+      - run: uv run pyright
+      # Правило слоёв core/ (docs/ARCHITECTURE.md, «Правила зависимостей») — контракты в
+      # pyproject.toml [[tool.importlinter.contracts]].
+      - run: uv run lint-imports
+      # addopts = "-m 'not llm and not db'" (pyproject.toml) — платные/живые интеграционные тесты
+      # уже исключены дефолтом.
+      - run: uv run pytest
+      - run: uv run python -m core.platform.db.migrate
+      - run: uv run pytest -m db
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      # build:ext:ci = build:ext без prebuild:ext-хука (иначе npm test гоняется дважды подряд —
+      # тесты уже прогнаны шагом выше, тем же паттерном, что deploy/Dockerfile использует в CI-контексте).
+      - run: npm run build:ext:ci
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # api-образ: multi-stage (ext-build → uv), extension/dist собирается внутри —
+      # без этого шага GET /api/meta/extension/download отдаёт 409 на проде.
+      - run: docker build -f deploy/Dockerfile .

@@ -1,0 +1,4 @@
+/* CSS-вход панели: токены первыми (определяют переменные), затем стили компонентов.
+   esbuild инлайнит локальные @import в один dist/panel.css. */
+@import "./tokens.css";
+@import "./panel.css";

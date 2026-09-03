@@ -1,0 +1,12 @@
+node_modules/
+dist/
+tools/.playwright-getmatch-profile/
+tools/capture-output/
+
+# Временные артефакты сниффинга сети / проб API getmatch (Playwright) — не в коммит
+_getmatch_profile/
+_getmatch_sniff.log
+_getmatch_*.json
+sniff_*.cjs
+probe_*.cjs
+dump_*.cjs

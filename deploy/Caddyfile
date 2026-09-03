@@ -1,0 +1,21 @@
+# Reverse-proxy для ВМ Selectel.
+# {$DOMAIN} — подстановка из окружения контейнера caddy (compose.prod.yaml), домен в коде не
+# хардкожен. Один reverse_proxy на весь домен: frontend/nginx.conf уже сам разбирает /api/,
+# /auth/, /score, /health, /vacancies/, /funnel, /skip на api:8000 и отдаёт SPA на остальное —
+# Caddy не должен дублировать эту логику путей.
+{$DOMAIN} {
+    # Сжатие обязано быть здесь, а не только в nginx. Замер на проде 2026-08-27: тот же
+    # чанк через nginx (127.0.0.1:5173) приходит с `Content-Encoding: gzip`, а через Caddy —
+    # без заголовка и ровно в размер файла на диске, то есть Caddy отдаёт распакованное.
+    # Браузер получал весь бандл несжатым; комментарий в frontend/nginx.conf про «490 КБ
+    # вместо 1.6 МБ» до этой строки был верен только до Caddy.
+    # Дефект Д3, plans/wolves_game_deep_polish_2026_08_26.md.
+    encode zstd gzip
+    reverse_proxy frontend:80
+}
+
+# www — то же DNS A-имя, но CORS/cookie в api/config.py понимают только один литеральный origin
+# (FRONTEND_ORIGIN) — второй host держать отдельным origin незачем, редиректим на apex.
+www.{$DOMAIN} {
+    redir https://{$DOMAIN}{uri} permanent
+}

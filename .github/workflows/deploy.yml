@@ -1,0 +1,67 @@
+name: Deploy
+
+# Push в main → раскатка на ВМ без ручного SSH. Триггерится через workflow_run на CI, а не
+# push напрямую — иначе красный CI не помешал бы деплою (push и workflow_run — независимые
+# события, ci.yml сам ничего не блокирует).
+#
+# Секреты (Settings → Secrets and variables → Actions), заводятся один раз на ВМ:
+#   DEPLOY_HOST     — IP или домен ВМ
+#   DEPLOY_USER     — non-root deploy-пользователь, напр. "deploy"
+#   DEPLOY_SSH_KEY  — приватный ключ этого пользователя (публичный уже в его authorized_keys)
+#   DEPLOY_PORT     — опционально, порт sshd (дефолт 22)
+# Деплой-пользователь должен иметь read-доступ к репозиторию через свой собственный git remote
+# на ВМ (deploy-ключ GitHub или уже настроенный клон) — это настраивается один раз при
+# провижининге ВМ, не здесь.
+#
+# Обход при инциденте Actions / zombie queued:
+#   gh run cancel <id>                  # снять зависший Deploy (если API жив)
+#   gh workflow run deploy.yml          # ручной Deploy (cancel-in-progress снимет предыдущий)
+#   .\deploy\deploy_prod.ps1            # полный обход Actions → SSH на ВМ (тот же remote_up.sh)
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Ручной запуск, когда CI зелёный, а workflow_run-событие потерялось
+  # (очередь Actions / zombie queued) — иначе деплой нечем дернуть без нового push.
+  # `{}` обязателен: голый `workflow_dispatch:` даёт startup_failure без jobs.
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  # Новый Deploy (в т.ч. ручной) снимает предыдущий queued/in_progress — иначе при
+  # инциденте runners копится «вечный» queued и блокирует группу навсегда.
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # workflow_dispatch: github.event.workflow_run пуст → старый if всегда false → skipped.
+    # workflow_run: только зелёный CI на main (не деплоим красный / чужую ветку).
+    if: >
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Только remote_up.sh уходит на ВМ через script_path; checkout нужен локально runner'у.
+          sparse-checkout: deploy
+          fetch-depth: 1
+
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_path: deploy/remote_up.sh
+          # Долгий docker build на ВМ — дефолтный timeout ssh-action слишком короткий.
+          command_timeout: 30m

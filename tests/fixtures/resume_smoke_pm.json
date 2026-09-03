@@ -1,0 +1,41 @@
+{
+  "personal": {
+    "full_name": "Анна Тестова",
+    "city": "Москва",
+    "work_countries": ["РФ"],
+    "relocation": "Не готов"
+  },
+  "position": {
+    "title": "Project Manager",
+    "salary_min": 250000,
+    "salary_comfortable": 320000,
+    "salary_currency": "RUB",
+    "salary_basis": "На руки",
+    "employment": "Полная занятость",
+    "schedule": ["Офис", "Гибрид"],
+    "grade": ["Senior", "Lead"],
+    "company_types": ["Продукт", "Биг тех"],
+    "categories": ["Project Manager"]
+  },
+  "search_criteria": {
+    "niches": ["Agile delivery", "FinTech product", "Cross-functional teams"],
+    "role_kind": "Управляю людьми",
+    "market_segment": "IT",
+    "target_companies": ["Тинькофф", "Авито"],
+    "avoid_companies": [],
+    "dealbreakers": ["Только ГПХ / ИП", "Частые командировки"],
+    "notes": "Ищу PM в продуктовой IT-команде, офис или гибрид в Москве."
+  },
+  "about": "Senior Project Manager с опытом delivery в продуктовых IT-командах.",
+  "key_skills": ["Jira", "Scrum", "Stakeholder management", "Roadmap", "Risk management"],
+  "experience": [
+    {
+      "company": "Продуктовая IT-компания",
+      "position": "Project Manager",
+      "start": "Январь 2021",
+      "end": "",
+      "current": true,
+      "description": "Вёл кросс-функциональные команды 8–12 человек. Delivery фич по квартальному roadmap."
+    }
+  ]
+}

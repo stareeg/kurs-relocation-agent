@@ -1,0 +1,40 @@
+{
+  "_comment": "Опциональный сид рыночных вилок (gross ₽/мес) по company_type × grade. Таблица написана под senior-инженера РФ-IT 2025-2026 и для другого рынка врёт в разы. Копируй в свой путь и укажи SALARY_BENCHMARKS_PATH в .env; пустой путь — не загружать.",
+  "product": {
+    "senior_plus": [450000, 550000],
+    "mid": [350000, 450000],
+    "junior": [250000, 350000],
+    "generic_backend": [280000, 380000],
+    "wrong_domain_senior": [350000, 450000]
+  },
+  "fintech_product": {
+    "senior_plus": [470000, 570000],
+    "mid": [370000, 470000]
+  },
+  "infra": {
+    "senior_plus": [480000, 580000]
+  },
+  "bank": {
+    "senior_plus": [400000, 500000],
+    "mid": [330000, 430000],
+    "generic_backend": [300000, 400000]
+  },
+  "startup": {
+    "senior_plus": [380000, 480000],
+    "mid": [300000, 400000],
+    "junior": [220000, 320000]
+  },
+  "outsource": {
+    "senior_plus": [320000, 420000],
+    "mid": [280000, 380000],
+    "junior": [200000, 300000],
+    "generic_backend": [250000, 350000]
+  },
+  "unknown": {
+    "senior_plus": [420000, 520000],
+    "mid": [340000, 440000],
+    "junior": [240000, 340000],
+    "generic_backend": [270000, 370000],
+    "wrong_domain_senior": [330000, 430000]
+  }
+}

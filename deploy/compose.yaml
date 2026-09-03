@@ -1,0 +1,86 @@
+name: copilot
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-copilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-copilot}
+      POSTGRES_DB: ${POSTGRES_DB:-copilot}
+    ports:
+      # Dev ходит в нативный PostgreSQL 18 — этот сервис для прод/CI-варианта.
+      # Если поднимаешь docker-PG на хосте с нативной PG на 5432, опубликуй на свободном порту
+      # через POSTGRES_HOST_PORT (напр. 5433); внутри docker-сети контейнер остаётся на 5432.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      # postgres:18+ хочет монтирование в /var/lib/postgresql (не /var/lib/postgresql/data, как
+      # было у ≤17) — своя поддиректория на major-версию, под pg_ctlcluster-совместимый апгрейд.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-copilot} -d ${POSTGRES_DB:-copilot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: ../.env
+    environment:
+      POSTGRES_HOST: postgres
+      # Внутри docker-сети контейнер слушает 5432; перебиваем POSTGRES_PORT из .env (host-only маппинг).
+      POSTGRES_PORT: 5432
+    volumes:
+      # env_file выше кладёт переменные в процесс, но api/main.py:lifespan зовёт ensure_env_file()
+      # (core/platform/config/secrets.py) — она ищет физический .env в cwd (A-18, понятная ошибка
+      # для friend-install без него). На VM/в контейнере .env и так живёт на хосте (§7.2 плана),
+      # просто дополнительно домаунчиваем тот же файл файлом, а не только переменными.
+      - ../.env:/app/.env:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      # Контекст — корень репо, не ../frontend: frontend/src импортирует общий shared/ (как api
+      # тянет extension/, см. frontend/Dockerfile). Уже с ".." — общий с api/bot, не ошибка копипаста.
+      context: ..
+      dockerfile: frontend/Dockerfile
+    # SPA + прокси на api; на хосте отдаём как :5173, чтобы origin совпадал с dev (FRONTEND_ORIGIN).
+    ports:
+      - "${FRONTEND_HOST_PORT:-5173}:80"
+    depends_on:
+      - api
+
+  bot:
+    # Тот же образ, что api (общий Dockerfile/контекст сборки) — только другая команда:
+    # long-polling против уже поднятого api, entrypoint bot_app/__main__.py. Пустой
+    # TELEGRAM_BOT_TOKEN — ожидаемый краш при старте (bot_app/run.py); сервис нужен только
+    # там, где токен реально задан в .env.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["uv", "run", "--no-sync", "python", "-m", "bot_app"]
+    env_file: ../.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      # Внутри docker-сети api слушает 8000 под именем сервиса, не localhost.
+      BACKEND_URL: http://api:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:

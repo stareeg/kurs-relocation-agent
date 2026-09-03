@@ -1,0 +1,4 @@
+# Скрипты из deploy/ выполняются на ВМ (Linux) после scp — CRLF из checkout на Windows
+# ломает их с `\r: command not found`. Правило было точечным на remote_up.sh; расширено на
+# всю папку, чтобы следующий скрипт не пришлось чинить задним числом.
+deploy/*.sh text eol=lf

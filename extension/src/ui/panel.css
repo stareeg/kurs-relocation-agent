@@ -1,0 +1,2364 @@
+/* Стили панели расширения. Все цвета — токены из tokens.css (ноль хардкод-hex в триаж-панели).
+   EX-2: переоформление под дизайн-систему web (Slate/Zinc, приглушённая пастель, lucide, ноль эмодзи).
+   Блоки «гео-чип» и «негоциации» внизу — поверхности EX-5, токенизируются в той задаче. */
+
+:host {
+  all: initial;
+  font-family: var(--jh-font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--jh-fg);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* иконки lucide инлайнятся в потоке flex — не сжимать, рисовать блоком */
+.jh-root svg { flex-shrink: 0; display: block; }
+
+/* ── Root ── */
+.jh-root {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(600px, calc(100vw - 32px));
+}
+
+/* EX-18: ОДНО окно — бар и панель делят рамку/тень/скругления вместо трёх плавающих кусков
+   (тулбар, панель, круглая кнопка настроек по отдельности). Закрыта панель — окно ужимается
+   до высоты одного бара; открыта — растёт вниз, бар остаётся прилипшей «шапкой». */
+.jh-window {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100vw - 32px));
+  background: var(--jh-bg);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-panel);
+  box-shadow: var(--jh-shadow);
+  overflow: hidden;
+}
+
+.jh-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  flex: 0 0 auto;
+}
+/* панель открыта под баром — тонкий разделитель вместо второй рамки/тени */
+.jh-window:has(.jh-panel:not(.hidden)) .jh-bar {
+  border-bottom: 1px solid var(--jh-border);
+}
+
+.jh-toolbar {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.jh-toolbar:empty { display: none; }
+
+/* Действия по вакансии (Обновить / Вернуть в воронку / Свернуть) — в баре, слева от
+   «Аккаунт». Маленькие ghost-иконки, подписи в title. */
+.jh-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.jh-bar-actions:empty { display: none; }
+.jh-bar-actions-suspended { visibility: hidden; }
+/* Тот же вес/бордер, что у .jh-act-btn («Сопроводительное» и т.п.) — иначе кнопки в баре
+   читались как приглушённые подписи, а не как кликабельные кнопки. */
+.jh-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  cursor: pointer;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background var(--jh-transition), color var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-bar-btn:hover:not(:disabled) {
+  background: var(--jh-bg-subtle);
+  border-color: var(--jh-border-strong);
+}
+.jh-bar-btn:disabled { opacity: .55; cursor: wait; }
+
+/* EX-7: единый док — весь узел сдвигается на 112px вверх на страницах, где HH рисует свою
+   кнопку «Чаты» поверх нижнего правого угла (было раньше через отдельные .jh-neg-root/.jh-res-root
+   классы у трёх независимых shadow-host, теперь один декларативный модификатор на общем корне). */
+.jh-root.jh-lifted {
+  bottom: 112px;
+}
+
+/* ── EX-18: кнопка «Аккаунт» — теперь внутри общего бара, не отдельная плавающая FAB.
+   Скрыта, пока вход не активен (renderGate в dock.ts) — до входа показывать нечего. */
+.jh-settings-btn {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--jh-transition), color var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-settings-btn:hover,
+.jh-settings-btn.active {
+  background: var(--jh-bg-subtle);
+  color: var(--jh-fg-body);
+  border-color: var(--jh-border-strong);
+}
+.jh-settings-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--jh-dot-warn);
+  border: 1.5px solid var(--jh-bg);
+}
+.jh-settings-dot.ok {
+  background: var(--jh-dot-pos);
+}
+
+/* ── Экран «Аккаунт»: заменяет интерфейс панели, а не растёт отдельной карточкой под ней
+   (иначе окно вытягивалось вверх за пределы экрана). Сверху — кнопка «Вернуться». */
+.jh-account-panel {
+  border-top: 1px solid var(--jh-border);
+  background: var(--jh-bg-subtle);
+  max-height: min(88vh, 860px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.jh-account-panel:empty { display: none; }
+.jh-account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px var(--jh-pad) 0;
+}
+.jh-account-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-fg);
+}
+.jh-account-title svg { color: var(--jh-fg-muted); }
+.jh-account-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-account-back:hover { background: var(--jh-bg-muted); border-color: var(--jh-border-strong); }
+.jh-account-body { padding: 12px var(--jh-pad) var(--jh-pad); }
+
+/* Панель адаптера скрыта, пока открыт «Аккаунт» — но без display:none, чтобы адаптер
+   не переинициализировался при возврате. */
+.jh-panel.jh-panel-suspended { display: none; }
+
+.hidden { display: none !important; }
+
+/* ── Доступность: единое кольцо фокуса с клавиатуры ──
+   :host{all:initial} убирает дефолтный outline. Возвращаем явное кольцо
+   только для фокуса с клавиатуры (:focus-visible) — мышь не подсвечиваем. */
+.jh-root :focus-visible {
+  outline: 2px solid var(--jh-accent);
+  outline-offset: 2px;
+}
+/* инпут уже несёт border+ring на :focus — не дублировать outline */
+.jh-qa-input:focus-visible { outline: none; }
+/* контейнер панели фокусируется программно (tabindex=-1) — кольцо не нужно */
+.jh-panel:focus,
+.jh-panel:focus-visible { outline: none; }
+
+/* ── Кнопки тулбара ── */
+.jh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--jh-radius-control);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--jh-accent-fg);
+  background: var(--jh-accent);
+  white-space: nowrap;
+  transition: background var(--jh-transition), transform var(--jh-transition);
+}
+.jh-btn:hover:not(:disabled) {
+  background: var(--jh-accent-hover);
+  transform: translateY(-1px);
+}
+.jh-btn:disabled { opacity: .7; cursor: wait; }
+
+.jh-btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--jh-neg-border);
+  border-radius: var(--jh-radius-control);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+  white-space: nowrap;
+  transition: border-color var(--jh-transition);
+}
+.jh-btn-cancel:hover { border-color: var(--jh-neg-fg); }
+
+.jh-btn-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg);
+  white-space: nowrap;
+  transition: background var(--jh-transition);
+}
+.jh-btn-expand:hover { background: var(--jh-bg-subtle); }
+
+/* ── Шаг 10: бейдж «N рекомендовано» в счётчике каталога getmatch. ── */
+.jh-gm-catalog-rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--jh-pos-fg);
+  background: var(--jh-pos-bg);
+  border: 1px solid var(--jh-pos-border);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.jh-gm-catalog-rec-badge:hover {
+  background: var(--jh-pos-border);
+  border-color: var(--jh-pos-fg);
+}
+
+/* ── Панель ── */
+/* EX-18: рамка/тень теперь на .jh-window — панель просто нижняя область того же окна, флеш
+   с его краями (только нижние углы скруглены, раз бар всегда выше неё). */
+.jh-panel {
+  width: 100%;
+  max-height: min(88vh, 860px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--jh-bg);
+  border-bottom-left-radius: var(--jh-radius-panel);
+  border-bottom-right-radius: var(--jh-radius-panel);
+}
+
+/* прокручивается тело панели (header и footer закреплены) */
+.jh-body::-webkit-scrollbar { width: 4px; }
+.jh-body::-webkit-scrollbar-track { background: transparent; }
+.jh-body::-webkit-scrollbar-thumb { background: var(--jh-border-strong); border-radius: 4px; }
+
+/* ── Header ── */
+.jh-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px var(--jh-pad);
+  border-bottom: 1px solid var(--jh-border);
+  background: var(--jh-bg);
+  flex: 0 0 auto;
+}
+.jh-header-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Балл + пилюли (Совет/Воронка/…) — одной строкой (U-04). Раньше здесь не было display:flex,
+   поэтому блочная .jh-pills-row всегда переносилась под строчный .jh-score на отдельную строку —
+   отсюда «каждый показатель на своей строке» в шапке. */
+.jh-header-score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jh-header-score-row::-webkit-scrollbar { display: none; }
+
+.jh-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--jh-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+.jh-brand svg { color: var(--jh-fg-muted); }
+
+/* ── Шапка (U-04): зеркало DrawerHeader — балл + название, затем мета-строка ── */
+.jh-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.jh-header-vacancy-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jh-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Правка 2026-08-20: название — ссылка на дровер вакансии в вебе (новая вкладка), если
+   `vacancyId` известен (см. `headerTitleRowHtml`). */
+a.jh-header-vacancy-title {
+  text-decoration: none;
+  cursor: pointer;
+}
+a.jh-header-vacancy-title:visited { color: var(--jh-fg); }
+a.jh-header-vacancy-title:hover { color: var(--jh-accent); text-decoration: underline; }
+.jh-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  min-width: 0;
+  font-size: var(--jh-text-sm);
+  color: var(--jh-fg-muted);
+  line-height: 1.4;
+}
+.jh-header-meta-sep {
+  color: #cbd5e1; /* slate-300 — как text-slate-300 в SheetDescription дровера */
+}
+
+/* ── Score в шапке — крупнее и заметнее drawer-прототипа (U-04 ревизия): это первое, на что
+   смотрят в панели, значение должно читаться сразу, без прищура. ── */
+.jh-score {
+  flex-shrink: 0;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.jh-score.good { color: var(--jh-pos-fg); }
+.jh-score.mid  { color: var(--jh-warn-fg); }
+.jh-score.low  { color: var(--jh-fg-muted); }
+.jh-score.none { color: var(--jh-fg-meta); }
+
+.jh-score-max {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg-meta);
+  margin-left: 1px;
+}
+
+/* зарплата справа от балла — компактная подпись, без иконки-денег (Домен занял её место в метриках) */
+.jh-score-salary {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.jh-score-salary.good    { color: var(--jh-pos-fg); }
+.jh-score-salary.bad     { color: var(--jh-neg-fg); }
+.jh-score-salary.neutral { color: var(--jh-fg-muted); }
+.jh-score-salary svg { color: var(--jh-pos-fg); }
+
+/* ── Разбор балла «Почему N» (U-06): строки с полосами, как ScoreBreakdown дровера ── */
+.jh-breakdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--jh-gap) / 2);
+}
+
+/* Зеркало ScoreBreakdown дровера (grid-cols-2 gap-x-4 gap-y-1.5): 2 колонки × 3 строки
+   компактнее прежнего столбца из шести строк и один-в-один совпадает с web. */
+.jh-breakdown-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.jh-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--jh-text-sm);
+  line-height: 1.3;
+}
+
+/* Подпись фактора (Грейд/Формат/…): при наличии reasoning — точечное подчёркивание и
+   dark-тултип по hover (зеркало ScoreBreakdownLabel дровера), без нативного title. */
+.jh-breakdown-label {
+  flex: 0 0 80px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jh-fg-muted);
+}
+.jh-breakdown-label.jh-has-tip {
+  cursor: help;
+  text-decoration: underline dotted var(--jh-border-strong);
+  text-underline-offset: 3px;
+}
+
+/* Иконка-барьер напротив фактора, который сработал как гейт, — вместо текстового
+   slop-бейджа «Балл срезан: …» в шапке. По hover на фактор видно, что именно не так. */
+.jh-breakdown-flag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--jh-warn-fg);
+  cursor: help;
+}
+
+.jh-breakdown-track {
+  flex: 1 1 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--jh-bg-muted);
+}
+
+.jh-breakdown-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--jh-fg-meta);
+}
+.jh-breakdown-fill.good    { background: var(--jh-dot-pos); }
+.jh-breakdown-fill.mid     { background: var(--jh-dot-warn); }
+.jh-breakdown-fill.bad     { background: var(--jh-dot-neg); }
+.jh-breakdown-fill.neutral { background: var(--jh-fg-meta); }
+
+.jh-breakdown-nums {
+  flex: 0 0 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--jh-fg-body);
+}
+.jh-breakdown-nums.good    { color: var(--jh-pos-fg); }
+.jh-breakdown-nums.mid     { color: var(--jh-warn-fg); }
+.jh-breakdown-nums.bad     { color: var(--jh-neg-fg); }
+.jh-breakdown-nums.neutral { color: var(--jh-fg-body); }
+
+.jh-breakdown-unavailable {
+  font-size: var(--jh-text-sm);
+  color: var(--jh-fg-meta);
+  margin: 0;
+}
+
+.jh-rec-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jh-rec-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--jh-fg-meta);
+}
+
+.jh-rec {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--jh-radius-control);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.jh-rec.strong_apply { background: var(--jh-pos-bg);  color: var(--jh-pos-fg);  border-color: var(--jh-pos-border); }
+.jh-rec.apply        { background: var(--jh-info-bg); color: var(--jh-info-fg); border-color: var(--jh-info-border); }
+.jh-rec.maybe        { background: var(--jh-warn-bg); color: var(--jh-warn-fg); border-color: var(--jh-warn-border); }
+.jh-rec.skip         { background: var(--jh-bg-subtle); color: var(--jh-fg-muted); border-color: var(--jh-border); }
+
+/* ── Совет + Воронка + мета-пилюли (Письмо, Отклики) — одной строкой рядом со скором (U-04);
+   не переносим — при нехватке места строка скора целиком скроллится по горизонтали
+   (.jh-header-score-row), а не растягивает шапку по вертикали. ── */
+.jh-pills-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Маленькие мета-пилюли в строке «Совет · Воронка» (Письмо обязательно, число откликов) —
+   короче прежних бейджей: только суть, детали в data-jh-tip. */
+.jh-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--jh-radius-control);
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.jh-pill-badge.jh-pill-warn      { background: var(--jh-warn-bg); color: var(--jh-warn-fg); border-color: var(--jh-warn-border); }
+.jh-pill-badge.jh-competition-low    { background: var(--jh-pos-bg);  color: var(--jh-pos-fg);  border-color: var(--jh-pos-border); }
+.jh-pill-badge.jh-competition-medium { background: var(--jh-warn-bg); color: var(--jh-warn-fg); border-color: var(--jh-warn-border); }
+.jh-pill-badge.jh-competition-high   { background: var(--jh-neg-bg);  color: var(--jh-neg-fg);  border-color: var(--jh-neg-border); }
+
+/* Лёгкий dark-тултип (зеркало variant="dark" в вебе): один общий бокс в shadow-root,
+   позиционируется от data-jh-tip элемента под курсором. */
+.jh-tip {
+  position: absolute;
+  z-index: 60;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0f172a; /* slate-900 — как bg-slate-900 у TooltipContent dark */
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: pre-line;
+  box-shadow: 0 8px 20px -6px rgba(15, 23, 42, 0.4);
+  pointer-events: none;
+  animation: jh-tip-in 120ms ease;
+}
+@keyframes jh-tip-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Пилюля воронки в строке пилюль: подпись «Воронка» + цвет по этапу — чтобы не путать
+   с чипом рекомендации слева. */
+.jh-funnel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.jh-funnel-pill-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  opacity: .65;
+}
+.jh-funnel-pill-val { display: inline-flex; align-items: center; gap: 5px; }
+.jh-funnel-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.jh-funnel-pill.viewed    { background: var(--jh-bg-muted);   color: var(--jh-fg-body); }
+.jh-funnel-pill.applied   { background: var(--jh-info-bg);    color: var(--jh-info-fg);   border-color: var(--jh-info-border); }
+.jh-funnel-pill.screening { background: var(--jh-screen-bg);  color: var(--jh-screen-fg); border-color: var(--jh-screen-border); }
+.jh-funnel-pill.tech      { background: var(--jh-warn-bg);    color: var(--jh-warn-fg);   border-color: var(--jh-warn-border); }
+.jh-funnel-pill.final     { background: var(--jh-final-bg);   color: var(--jh-final-fg);  border-color: var(--jh-final-border); }
+.jh-funnel-pill.offer     { background: var(--jh-pos-bg);     color: var(--jh-pos-fg);    border-color: var(--jh-pos-border); }
+.jh-funnel-pill.rejected  { background: var(--jh-neg-bg);     color: var(--jh-neg-fg);    border-color: var(--jh-neg-border); }
+.jh-funnel-pill.archive   { background: var(--jh-bg-muted);   color: var(--jh-fg-muted);  border-color: var(--jh-border); }
+.jh-funnel-pill.unknown   { background: var(--jh-bg-subtle);  color: var(--jh-fg-muted);  border: 1px dashed var(--jh-border-strong); }
+
+/* ── Кнопки header ── */
+.jh-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--jh-border);
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  padding: 6px 10px;
+  border-radius: var(--jh-radius-control);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background var(--jh-transition);
+}
+.jh-collapse:hover { background: var(--jh-bg-subtle); }
+
+.jh-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--jh-border);
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--jh-radius-control);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--jh-transition);
+}
+.jh-close:hover { background: var(--jh-bg-subtle); }
+
+/* ── Body (прокручиваемая область между header и footer) ── */
+.jh-body {
+  padding: 14px var(--jh-pad) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--jh-gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+/* ── Footer: закреплённый композер чата (виден всегда, без прокрутки) ── */
+.jh-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px var(--jh-pad);
+  border-top: 1px solid var(--jh-border);
+  background: var(--jh-bg);
+}
+
+/* ── Вердикт (U-07): rounded-lg border slate-200 bg slate-50 p-2.5, как TabDecision дровера ── */
+.jh-verdict {
+  margin: 0;
+  padding: 10px;
+  background: var(--jh-bg-subtle);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+}
+.jh-verdict p {
+  margin: 0;
+  color: #1e293b; /* slate-800 */
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Секции списков (U-07): space-y-2 между заголовком и списком ── */
+.jh-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Карточки фактов (U-05): Зарплата · Формат · Грейд — зеркало FactCard дровера ── */
+.jh-fact-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: calc(var(--jh-gap) / 2);
+}
+
+.jh-fact-card {
+  background: var(--jh-bg-subtle);
+  border-radius: var(--jh-radius-control);
+  padding: calc(var(--jh-gap) * 0.625);
+  min-width: 0;
+}
+/* Тултип карточки (jh-has-tip + data-jh-tip) — курсор-подсказка, как у строк «Почему N». */
+.jh-fact-card.jh-has-tip { cursor: help; }
+
+.jh-fact-card-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--jh-fg-muted);
+}
+
+.jh-fact-card-value {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--jh-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jh-fact-card-caption {
+  margin-top: 2px;
+  font-size: var(--jh-text-xs);
+  color: var(--jh-fg-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.jh-fact-card-value.good    { color: var(--jh-pos-fg); }
+.jh-fact-card-value.mid     { color: var(--jh-warn-fg); }
+.jh-fact-card-value.bad     { color: var(--jh-neg-fg); }
+.jh-fact-card-value.neutral { color: var(--jh-fg-body); }
+.jh-fact-card-value.muted   { color: var(--jh-fg-meta); }
+.jh-fact-card-value.info    { color: var(--jh-info-fg); }
+
+/* ── Метрики: сетка «показатель + значение» (статистика резюме hh, профиль getmatch) ── */
+.jh-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.jh-metric {
+  background: var(--jh-bg-subtle);
+  border-radius: var(--jh-radius-control);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jh-metric-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jh-metric-head svg { color: var(--jh-fg-meta); }
+
+.jh-metric-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--jh-fg-muted);
+}
+
+.jh-metric-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg);
+  line-height: 1.3;
+  word-break: break-word;
+}
+.jh-metric-value svg     { color: var(--jh-pos-fg); }
+.jh-metric-value.good    { color: var(--jh-pos-fg); }
+.jh-metric-value.mid     { color: var(--jh-warn-fg); }
+.jh-metric-value.bad     { color: var(--jh-neg-fg); }
+.jh-metric-value.neutral { color: var(--jh-fg-body); }
+
+/* ── Секции ── */
+.jh-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--jh-fg-muted);
+  margin: 0;
+}
+.jh-section-title svg { color: var(--jh-fg-muted); }
+
+/* ── Списки плюсов/минусов/флагов (U-07: text-sm, как BulletList дровера). Решение 3: точки
+   стали настоящими узлами (не ::before) — это ручка drag-and-drop; справа — компактная кнопка
+   удаления, без лишних вертикальных отступов. ── */
+.jh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 6px; /* пустой список (флаги) остаётся видимой зоной сброса */
+  border-radius: var(--jh-radius-control);
+  transition: outline-color var(--jh-transition);
+}
+.jh-list li strong { color: var(--jh-fg); font-weight: 600; }
+
+.jh-thesis-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--jh-fg-body);
+  line-height: 1.45;
+  transition: background var(--jh-transition), opacity var(--jh-transition);
+}
+.jh-thesis-item.jh-dragging { opacity: .35; }
+.jh-thesis-dot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  margin-top: 3px;
+  color: var(--jh-fg-meta);
+  cursor: grab;
+}
+.jh-thesis-dot:active { cursor: grabbing; }
+.jh-list.pros  .jh-thesis-dot { color: var(--jh-dot-pos); }
+.jh-list.cons  .jh-thesis-dot { color: var(--jh-dot-warn); }
+.jh-list.flags .jh-thesis-dot { color: var(--jh-dot-neg); }
+.jh-thesis-text {
+  flex: 1;
+  min-width: 0;
+}
+.jh-thesis-del {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--jh-fg-meta);
+  opacity: .5;
+  cursor: pointer;
+  transition: background var(--jh-transition), color var(--jh-transition), opacity var(--jh-transition);
+}
+.jh-thesis-del:hover:not(:disabled) {
+  background: var(--jh-neg-bg);
+  color: var(--jh-neg-fg);
+  opacity: 1;
+}
+.jh-thesis-del:disabled { opacity: .2; cursor: not-allowed; }
+
+/* Зона наведения при перетаскивании тезиса — пунктир вместо смены фона (нет верхнего/нижнего
+   отступа, чтобы список не «прыгал» по высоте во время drag). */
+.jh-list.jh-drop-target {
+  outline: 1px dashed var(--jh-border-strong);
+  outline-offset: 3px;
+}
+
+/* ── Верхний блок действий (триаж / этап / единая линия кнопок) ── */
+.jh-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jh-funnel-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+}
+
+/* триаж: «Отметить отклик» + «Пропустить» + «Открыть в вебе» во всю ширину */
+.jh-triage-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jh-triage-row {
+  display: flex;
+  gap: 8px;
+}
+.jh-triage-row > button { flex: 1 1 0; }
+
+/* чипы причин — раскрываются вверх над строкой триажа, под кнопкой «Пропустить» */
+.jh-skip-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.jh-skip-picker-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--jh-fg-muted);
+}
+
+.jh-btn-mark-applied,
+.jh-btn-applied-done,
+.jh-btn-skip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-btn-mark-applied {
+  border: none;
+  color: var(--jh-accent-fg);
+  background: var(--jh-accent);
+}
+.jh-btn-mark-applied:hover:not(:disabled) { background: var(--jh-accent-hover); }
+.jh-btn-applied-done {
+  border: 1px solid var(--jh-pos-border);
+  color: var(--jh-pos-fg);
+  background: var(--jh-pos-bg);
+  cursor: default;
+}
+.jh-btn-applied-done svg { color: var(--jh-pos-fg); }
+.jh-btn-skip {
+  border: 1px solid var(--jh-neg-border);
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+}
+.jh-btn-skip svg { color: var(--jh-neg-fg); }
+.jh-btn-skip:hover:not(:disabled) {
+  background: var(--jh-neg-border);
+}
+.jh-btn-mark-applied:disabled,
+.jh-btn-skip:disabled { opacity: .65; cursor: wait; }
+
+/* «Вернуть» (снять пропуск) — та же высота/стиль, что у «Пропустить», но нейтральный тон. */
+.jh-btn-unskip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+  border: 1px solid var(--jh-border);
+  color: var(--jh-fg-body);
+  background: var(--jh-bg);
+  flex-shrink: 0;
+}
+.jh-btn-unskip:hover:not(:disabled) {
+  background: var(--jh-bg-muted);
+  border-color: var(--jh-border-strong);
+}
+.jh-btn-unskip:disabled { opacity: .65; cursor: wait; }
+
+/* «Открыть в вебе» — постоянный мост в веб-приложение (U-08) */
+.jh-btn-open-web {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+  border: 1px solid var(--jh-info-border);
+  color: var(--jh-info-fg);
+  background: var(--jh-info-bg);
+}
+.jh-btn-open-web svg { color: var(--jh-info-fg); }
+.jh-btn-open-web:hover:not(:disabled) {
+  background: var(--jh-info-border);
+  border-color: var(--jh-info-fg);
+}
+.jh-btn-open-web:disabled { opacity: .65; cursor: wait; }
+
+/* единая линия кнопок: Письмо · Скрининг · Техничка */
+.jh-act-row {
+  display: flex;
+  gap: 6px;
+}
+.jh-act-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 6px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-act-btn > span { overflow: hidden; text-overflow: ellipsis; }
+.jh-act-btn:hover:not(:disabled) { background: var(--jh-bg-subtle); border-color: var(--jh-border-strong); }
+.jh-act-btn:disabled { opacity: .65; cursor: default; }
+.jh-act-btn svg { color: var(--jh-fg-muted); }
+
+/* «Избегать компанию» — красный тон (тот же словарь, что у «Пропустить»), чтобы отличаться от
+   нейтрального «Сопроводительное» рядом: это необратимое «больше не показывать компанию». */
+.jh-act-dodgy {
+  border-color: var(--jh-neg-border);
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+}
+.jh-act-dodgy svg { color: var(--jh-neg-fg); }
+.jh-act-dodgy:hover:not(:disabled) { background: var(--jh-neg-border); }
+
+/* Переключалка языка письма RU/EN (Э4.4 dual_employment_and_contracting_2026.md) — рядом с
+   кнопкой «Сопроводительное». Ничего не выбрано = автоопределение по резюме. */
+.jh-lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.jh-lang-btn {
+  padding: 4px 7px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jh-fg-muted);
+  background: var(--jh-bg);
+  cursor: pointer;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-lang-btn:hover { background: var(--jh-bg-subtle); border-color: var(--jh-border-strong); }
+.jh-lang-btn.jh-lang-active {
+  color: var(--jh-fg-body);
+  background: var(--jh-bg-subtle);
+  border-color: var(--jh-border-strong);
+}
+
+.jh-archive-done,
+.jh-applied-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg-body);
+  line-height: 1.4;
+}
+.jh-banner-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.jh-applied-done svg { color: var(--jh-pos-fg); }
+.jh-applied-partial {
+  color: var(--jh-warn-fg);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.jh-applied-partial svg { color: var(--jh-warn-fg); }
+
+/* мини-кнопка «Открыть в вебе» внутри done-баннера */
+.jh-banner-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg-subtle);
+  border: 1px solid var(--jh-border);
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.jh-banner-action:hover { background: var(--jh-bg-muted); border-color: var(--jh-border-strong); }
+.jh-banner-action svg { color: var(--jh-fg-body); }
+
+/* «Открыть в вебе» в done-баннере — тот же info-тон, что в активном триаже */
+.jh-banner-action-open-web {
+  color: var(--jh-info-fg);
+  background: var(--jh-info-bg);
+  border-color: var(--jh-info-border);
+}
+.jh-banner-action-open-web:hover {
+  background: var(--jh-info-border);
+  border-color: var(--jh-info-fg);
+}
+.jh-banner-action-open-web svg { color: var(--jh-info-fg); }
+
+/* done-state «Пропущено» (явный skip пользователя): приглушённый тон + кнопка возврата в воронку */
+.jh-skip-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg-muted);
+  line-height: 1.4;
+}
+.jh-skip-done-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jh-skip-done > .jh-skip-done-label svg { color: var(--jh-fg-muted); }
+
+/* ── Meta (URL) ── */
+.jh-meta {
+  font-size: 10px;
+  color: var(--jh-fg-meta);
+  padding-top: 12px;
+  border-top: 1px solid var(--jh-border);
+  word-break: break-all;
+}
+
+/* ── Error (U-10: силуэт ErrorState веба) ── */
+.jh-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 16px 20px;
+  text-align: center;
+}
+.jh-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+  border: 1px solid var(--jh-neg-border);
+}
+.jh-error-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--jh-fg);
+}
+.jh-error-note {
+  margin: 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--jh-fg-muted);
+}
+.jh-error-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-accent-fg);
+  background: var(--jh-accent);
+  cursor: pointer;
+  transition: background var(--jh-transition);
+}
+.jh-error-retry:hover { background: var(--jh-accent-hover); }
+.jh-error-retry svg { color: var(--jh-accent-fg); }
+
+/* Плашка ошибки внутри дока (отклики, переговоры). Экран «не удалось оценить» — .jh-error-state ниже. */
+.jh-error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+  border: 1px solid var(--jh-neg-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* ── Loading: точечный skeleton + animate-pulse ── */
+.jh-skel {
+  display: block;
+  background: var(--jh-bg-muted);
+  border-radius: 6px;
+  animation: jh-pulse 1.5s ease-in-out infinite;
+}
+.jh-skel-row { display: flex; align-items: center; gap: 10px; }
+.jh-skel-score { width: 42px; height: 24px; }
+.jh-skel-pill  { width: 84px; height: 20px; border-radius: 999px; }
+.jh-skel-bar   { flex: 1; height: 6px; border-radius: 999px; }
+.jh-skel-nums  { width: 48px; height: 10px; flex-shrink: 0; }
+.jh-skel-line { height: 12px; width: 100%; }
+.jh-skel-line.sm { width: 50%; height: 10px; }
+.jh-skel-line.md { width: 70%; }
+.jh-skel-btn { flex: 1 1 0; height: 40px; border-radius: var(--jh-radius-control); }
+.jh-skel-act { flex: 1 1 0; height: 34px; border-radius: var(--jh-radius-control); }
+.jh-skel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jh-skel-caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--jh-fg-muted);
+  font-size: 12px;
+  padding-top: 4px;
+}
+
+.jh-spin { animation: jh-spin .8s linear infinite; }
+@keyframes jh-spin { to { transform: rotate(360deg); } }
+@keyframes jh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* ── Q&A: тред в теле панели + композер закреплён в подвале ── */
+.jh-qa-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px;
+}
+/* пока переписки нет — контейнер скрыт, тело заканчивается на «Минусы» */
+.jh-qa-messages:empty { display: none; }
+
+/* Правка 2026-08-20 (мини-версия веб-чата вакансии, `Bubble` в `VacancyDialog.tsx`): крупнее
+   шрифт (было 12px — жаловались на нечитаемость), цвет по роли (sky/violet — те же токены, что
+   у статус-пилюль «Отклик»/«Скрининг»), выделяемый текст (копировать/выделить мышью), подпись
+   времени + кнопка «копировать» под пузырём (видна на ховере, не толкается в глаза на каждой
+   короткой реплике). */
+.jh-qa-msg {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 12px;
+  word-break: break-word;
+}
+.jh-qa-msg.user {
+  align-self: flex-end;
+  max-width: 92%;
+  background: var(--jh-info-bg);
+  border: 1px solid var(--jh-info-border);
+  color: var(--jh-fg);
+}
+.jh-qa-msg.assistant {
+  align-self: flex-start;
+  max-width: 96%;
+  background: var(--jh-screen-bg);
+  border: 1px solid var(--jh-screen-border);
+  color: var(--jh-fg-body);
+}
+.jh-qa-msg-body {
+  user-select: text;
+  cursor: text;
+}
+.jh-qa-msg-body p { margin: 0; white-space: pre-wrap; }
+.jh-qa-msg-body p + p { margin-top: 6px; }
+.jh-qa-msg-body ul,
+.jh-qa-msg-body ol { margin: 4px 0; padding-left: 18px; }
+.jh-qa-msg-body li + li { margin-top: 2px; }
+.jh-qa-msg-body strong { font-weight: 700; }
+
+.jh-qa-msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 14px;
+}
+.jh-qa-msg-copy {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  padding: 1px;
+  color: var(--jh-fg-meta);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--jh-transition), color var(--jh-transition);
+}
+.jh-qa-msg:hover .jh-qa-msg-copy,
+.jh-qa-msg-copy:focus-visible { opacity: 1; }
+.jh-qa-msg-copy:hover { color: var(--jh-fg-body); }
+.jh-qa-msg-time {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jh-fg-meta);
+}
+
+/* Правка 2026-08-20: поле ввода растёт с текстом (было `<input>`, всегда в одну строку) — снизу
+   выровнены, чтобы «Отправить»/«Чат» оставались у нижнего края растущего поля. */
+.jh-qa-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.jh-qa-input {
+  flex: 1;
+  border: 1px solid var(--jh-border-strong);
+  border-radius: var(--jh-radius-control);
+  padding: 8px 10px;
+  min-height: 36px;
+  max-height: 96px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg);
+  outline: none;
+  resize: none;
+  overflow-y: hidden;
+  transition: border-color var(--jh-transition), box-shadow var(--jh-transition);
+}
+.jh-qa-input:focus {
+  border-color: var(--jh-accent);
+  box-shadow: 0 0 0 3px var(--jh-ring);
+}
+/* «Отправить» — теперь с подписью (не только иконка); «Открыть чат» рядом выделен акцентным
+   цветом, чтобы две соседние кнопки в композере не путались местами. */
+.jh-qa-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--jh-bg);
+  color: var(--jh-fg-body);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-qa-send:hover:not(:disabled) { background: var(--jh-bg-subtle); border-color: var(--jh-border-strong); }
+.jh-qa-send:disabled,
+.jh-qa-input:disabled { opacity: .6; cursor: wait; }
+
+.jh-qa-open-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--jh-radius-control);
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--jh-accent);
+  color: var(--jh-accent-fg);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background var(--jh-transition);
+}
+.jh-qa-open-chat:hover { background: var(--jh-accent-hover); }
+
+/* ── EX-3: тост «сохранено → открыть в вебе» ── */
+.jh-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg);
+  border: 1px solid var(--jh-pos-border);
+  box-shadow: var(--jh-shadow);
+  font-size: 13px;
+  color: var(--jh-fg-body);
+}
+.jh-toast-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.jh-toast-msg svg { color: var(--jh-pos-fg); flex-shrink: 0; }
+.jh-toast-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 5px 10px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg-subtle);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--jh-transition);
+}
+.jh-toast-action:hover { background: var(--jh-bg-muted); }
+.jh-toast-action svg { color: var(--jh-fg-muted); }
+
+/* ── Кнопка «Копировать» в карточке письма ── */
+.jh-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-fg-body);
+  background: var(--jh-bg);
+  cursor: pointer;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-quick-btn:hover:not(:disabled) { background: var(--jh-bg-subtle); border-color: var(--jh-border-strong); }
+.jh-quick-btn:disabled { opacity: .65; cursor: wait; }
+.jh-quick-btn svg { color: var(--jh-fg-muted); }
+
+.jh-skip-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jh-skip-reason {
+  border: 1px solid var(--jh-border);
+  background: var(--jh-bg-subtle);
+  color: var(--jh-fg-body);
+  border-radius: var(--jh-radius-control);
+  padding: 5px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-skip-reason:hover {
+  background: var(--jh-neg-bg);
+  border-color: var(--jh-neg-border);
+  color: var(--jh-neg-fg);
+}
+
+/* письмо: карточка результата */
+.jh-cover-result:empty { display: none; }
+.jh-cover-box {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Правка 2026-08-20: клик — редактировать на месте (замена «Править в вебе»), рамка на ховере
+   как подсказка, что текст кликабелен. */
+.jh-cover-text {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--jh-bg-subtle);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--jh-fg-body);
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  transition: border-color var(--jh-transition), background var(--jh-transition);
+}
+.jh-cover-text:hover { border-color: var(--jh-border-strong); background: var(--jh-bg); }
+.jh-cover-textarea {
+  min-height: 140px;
+  max-height: 280px;
+  padding: 10px 12px;
+  background: var(--jh-bg);
+  border: 1px solid var(--jh-border-strong);
+  border-radius: var(--jh-radius-control);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--jh-fg-body);
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--jh-transition), box-shadow var(--jh-transition);
+}
+.jh-cover-textarea:focus {
+  border-color: var(--jh-accent);
+  box-shadow: 0 0 0 3px var(--jh-ring);
+}
+.jh-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* «Сохранить» — акцентная кнопка, тем же стилем, что «Открыть чат» в композере. */
+.jh-quick-btn-primary {
+  border-color: transparent;
+  background: var(--jh-accent);
+  color: var(--jh-accent-fg);
+}
+.jh-quick-btn-primary:hover:not(:disabled) { background: var(--jh-accent-hover); border-color: transparent; }
+.jh-quick-btn-primary svg { color: inherit; }
+.jh-cover-error {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--jh-neg-fg);
+  background: var(--jh-neg-bg);
+  border: 1px solid var(--jh-neg-border);
+  border-radius: var(--jh-radius-control);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Поверхности EX-5 (негоциации) — переведены на токены (Slate/Zinc +
+   приглушённая статус-пастель), эмодзи → lucide, ноль хардкод-hex.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Resumes stats page (статистика резюме, выше кнопки «Чаты» HH — см. .jh-lifted) ── */
+/* EX-18: ширину теперь держит .jh-window (бар и панель — одна рамка), поэтому у более узких
+   поверхностей ужимаем всё окно через :has(), а не только вложенную .jh-panel — иначе бар
+   остаётся на 600px, а панель под ним на 340px, и рамка съезжает. */
+.jh-window:has(.jh-res-panel) {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.jh-res-delta {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.jh-res-delta.up {
+  color: var(--jh-pos-fg);
+}
+.jh-res-delta.down {
+  color: var(--jh-neg-fg);
+}
+
+/* ── Negotiations page (выше кнопки «Чаты» HH — см. .jh-lifted) ── */
+.jh-neg-toolbar {
+  margin-bottom: 4px;
+}
+
+.jh-window:has(.jh-neg-panel) {
+  width: min(560px, calc(100vw - 32px));
+}
+/* Шаг 7: в свёрнутом виде панель скрыта (.hidden) — окно ужимается до ширины бара,
+   а не висит пустым блоком на 560px. */
+.jh-window:has(.jh-neg-panel.hidden) {
+  width: auto;
+}
+
+.jh-neg-panel {
+  max-height: min(70vh, 520px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.jh-neg-panel .jh-body {
+  overflow: auto;
+  flex: 1;
+}
+
+/* Карточки вместо таблицы — контент переносится внутри карточки, страница листается только
+   вниз (раньше .jh-neg-table-wrap скроллился ещё и вбок). */
+.jh-neg-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jh-neg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--jh-bg-subtle);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 12px;
+}
+.jh-neg-card-disc { background: var(--jh-warn-bg); border-color: var(--jh-warn-border); }
+.jh-neg-card-synced { opacity: 0.72; }
+
+.jh-neg-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jh-neg-card-title {
+  color: var(--jh-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jh-neg-card-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.jh-neg-card-action {
+  margin-left: auto;
+}
+
+.jh-neg-id {
+  font-family: ui-monospace, monospace;
+  color: var(--jh-fg-body);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.jh-neg-company {
+  color: var(--jh-fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jh-neg-hh {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-bg-muted);
+  color: var(--jh-fg-body);
+}
+
+.jh-neg-jh {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-info-bg);
+  color: var(--jh-info-fg);
+  border: 1px solid var(--jh-info-border);
+  font-weight: 600;
+}
+
+.jh-neg-tbd {
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--jh-warn-fg);
+  font-weight: 700;
+}
+
+.jh-neg-needs-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-warn-bg);
+  color: var(--jh-warn-fg);
+  border: 1px solid var(--jh-warn-border);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.jh-neg-needs-hint {
+  color: var(--jh-warn-fg);
+}
+
+.jh-neg-vac-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.jh-neg-vac-link:hover {
+  color: var(--jh-info-fg);
+}
+
+.jh-gm-badge-needs-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--jh-warn-bg);
+  color: var(--jh-warn-fg);
+  border: 1px solid var(--jh-warn-border);
+}
+
+.jh-neg-row-sync {
+  border: 1px solid var(--jh-info-border);
+  background: var(--jh-bg);
+  color: var(--jh-info-fg);
+  border-radius: var(--jh-radius-control);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--jh-transition);
+}
+
+.jh-neg-row-sync:hover {
+  background: var(--jh-info-bg);
+}
+
+.jh-neg-row-sync:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.jh-neg-synced-label {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-pos-bg);
+  color: var(--jh-pos-fg);
+  border: 1px solid var(--jh-pos-border);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jh-neg-disc-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--jh-warn-fg);
+  font-weight: 700;
+}
+
+.jh-neg-jh-cur {
+  color: var(--jh-fg-muted);
+  font-size: 11px;
+}
+
+/* override .jh-root svg{display:block} — стрелка-иконка инлайн между пилюлями */
+.jh-root svg.jh-neg-arrow {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 3px;
+  color: var(--jh-fg-meta);
+}
+
+.jh-neg-pending-count {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jh-warn-fg);
+}
+
+.jh-neg-page-badge {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--jh-fg-muted);
+  background: var(--jh-bg-muted);
+  padding: 2px 8px;
+  border-radius: var(--jh-radius-control);
+  font-variant-numeric: tabular-nums;
+}
+
+.jh-neg-progress-wrap {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--jh-bg-subtle);
+  border-radius: var(--jh-radius-control);
+  border: 1px solid var(--jh-border);
+}
+
+.jh-neg-progress-bar {
+  height: 8px;
+  background: var(--jh-bg-muted);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.jh-neg-progress-fill {
+  height: 100%;
+  background: var(--jh-dot-pos);
+  border-radius: 4px;
+  transition: width 0.35s ease;
+}
+
+.jh-neg-progress-label {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--jh-fg-body);
+}
+
+.jh-neg-quota {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--jh-fg-muted);
+}
+
+.jh-neg-msg {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-pos-bg);
+  color: var(--jh-pos-fg);
+  border: 1px solid var(--jh-pos-border);
+  font-size: 13px;
+}
+
+/* ── getmatch /applications (GM-5.1) ── */
+.jh-gm-apps-panel .jh-gm-apps-header {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.jh-gm-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jh-fg-muted);
+}
+
+/* ── Шаг 6: компактная шапка — одна строка «N откликов · M в Copilot» + цветные точки статусов
+   вместо огромного KPI и текстовых пилюль. ── */
+.jh-gm-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.jh-gm-summary-icon {
+  flex-shrink: 0;
+  color: var(--jh-fg-muted);
+}
+.jh-gm-summary-text {
+  font-size: 13px;
+  color: var(--jh-fg-body);
+  white-space: nowrap;
+}
+.jh-gm-summary-text strong {
+  font-weight: 700;
+  color: var(--jh-fg);
+  font-variant-numeric: tabular-nums;
+}
+.jh-gm-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+}
+.jh-gm-dotstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jh-fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+.jh-gm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.jh-gm-dot-approved { background: var(--jh-pos-fg); }
+.jh-gm-dot-waiting  { background: var(--jh-info-fg); }
+.jh-gm-dot-rejected { background: var(--jh-neg-fg); }
+.jh-gm-dot-unknown  { background: var(--jh-fg-meta); }
+
+/* ── Шаг 6: точка статуса в карточке (вместо большой пилюли с текстом). ── */
+.jh-gm-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.jh-gm-status-dot.jh-gm-dot-approved { background: var(--jh-pos-fg); }
+.jh-gm-status-dot.jh-gm-dot-waiting  { background: var(--jh-info-fg); }
+.jh-gm-status-dot.jh-gm-dot-rejected { background: var(--jh-neg-fg); }
+.jh-gm-status-dot.jh-gm-dot-unknown  { background: var(--jh-fg-meta); }
+
+/* ── Шаг 6: иконки-кнопки «открыть» без текста (подпись в title). ── */
+.jh-gm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--jh-border);
+  background: var(--jh-bg-subtle);
+  color: var(--jh-fg-body);
+  border-radius: var(--jh-radius-control);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--jh-transition), border-color var(--jh-transition);
+}
+.jh-gm-icon-btn:hover {
+  background: var(--jh-bg-muted);
+  border-color: var(--jh-border-strong);
+}
+.jh-gm-icon-btn svg { color: var(--jh-fg-muted); }
+
+.jh-gm-kpi-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.jh-gm-kpi {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.jh-gm-kpi-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--jh-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.jh-gm-kpi-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg-muted);
+}
+
+.jh-gm-status-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.jh-gm-stat {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--jh-radius-control);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.jh-gm-stat-approved { background: var(--jh-pos-bg); color: var(--jh-pos-fg); border: 1px solid var(--jh-pos-border); }
+.jh-gm-stat-waiting { background: var(--jh-info-bg); color: var(--jh-info-fg); border: 1px solid var(--jh-info-border); }
+.jh-gm-stat-rejected { background: var(--jh-neg-bg); color: var(--jh-neg-fg); border: 1px solid var(--jh-neg-border); }
+.jh-gm-stat-unknown { background: var(--jh-bg-muted); color: var(--jh-fg-muted); border: 1px solid var(--jh-border); }
+
+.jh-gm-sync-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--jh-fg-muted);
+}
+
+.jh-gm-archive-toggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--jh-fg-muted);
+  background: transparent;
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-control);
+  cursor: pointer;
+}
+
+.jh-gm-archive-toggle:hover {
+  color: var(--jh-fg);
+  border-color: var(--jh-fg-muted);
+}
+
+.jh-gm-app-cards {
+  gap: 10px;
+}
+
+.jh-gm-app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--jh-bg);
+  border: 1px solid var(--jh-border);
+  border-radius: var(--jh-radius-card);
+  font-size: 12px;
+}
+
+.jh-gm-app-card.jh-neg-card-disc {
+  background: var(--jh-warn-bg);
+  border-color: var(--jh-warn-border);
+}
+
+.jh-gm-app-card.jh-gm-card-archived {
+  opacity: 0.88;
+}
+
+.jh-gm-app-card.jh-gm-card-stale {
+  border-style: dashed;
+}
+
+.jh-gm-app-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.jh-gm-app-card-titles {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jh-gm-app-company {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--jh-fg);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.jh-gm-app-title {
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.jh-gm-pill {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: var(--jh-radius-control);
+  white-space: nowrap;
+}
+
+.jh-gm-pill-approved { background: var(--jh-pos-bg); color: var(--jh-pos-fg); border: 1px solid var(--jh-pos-border); }
+.jh-gm-pill-waiting { background: var(--jh-info-bg); color: var(--jh-info-fg); border: 1px solid var(--jh-info-border); }
+.jh-gm-pill-rejected { background: var(--jh-neg-bg); color: var(--jh-neg-fg); border: 1px solid var(--jh-neg-border); }
+.jh-gm-pill-unknown { background: var(--jh-bg-muted); color: var(--jh-fg-muted); border: 1px solid var(--jh-border); }
+
+.jh-gm-meta {
+  font-size: 11px;
+  color: var(--jh-fg-muted);
+  line-height: 1.35;
+}
+
+.jh-gm-funnel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.jh-gm-funnel-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--jh-fg-meta);
+}
+
+/* Шаг 8: вместо текстовой подписи «Copilot» — маленькая иконка-искорка. */
+.jh-gm-funnel-icon {
+  color: var(--jh-fg-meta);
+  flex-shrink: 0;
+}
+
+.jh-gm-inline-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--jh-pos-fg);
+  font-weight: 600;
+}
+
+.jh-gm-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jh-gm-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--jh-radius-control);
+}
+
+.jh-gm-badge-archived { background: var(--jh-bg-muted); color: var(--jh-fg-muted); }
+.jh-gm-badge-stale { background: var(--jh-warn-bg); color: var(--jh-warn-fg); border: 1px solid var(--jh-warn-border); }
+.jh-gm-badge-disc { background: var(--jh-warn-bg); color: var(--jh-warn-fg); }
+
+.jh-gm-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--jh-border);
+}
+
+/* Шаг 6: действия-иконки инлайнятся в шапку карточки, без нижней подложки. */
+.jh-gm-card-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.jh-gm-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--jh-border);
+  background: var(--jh-bg-subtle);
+  color: var(--jh-fg-body);
+  border-radius: var(--jh-radius-control);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--jh-transition);
+}
+
+.jh-gm-link-btn:hover {
+  background: var(--jh-bg-muted);
+}
+
+.jh-gm-card-actions .jh-neg-row-sync {
+  margin-left: auto;
+}
+
+.jh-btn-loading {
+  position: relative;
+  padding-left: 28px !important;
+}
+
+.jh-btn-loading::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: jh-spin 0.7s linear infinite;
+  opacity: 0.75;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   EX-18: форма входа (auth/render.ts) внутри shadow-DOM панели — тот же
+   набор классов, что settings-chrome.css рисует для options/popup, портирован
+   сюда один в один (те же --jh-* токены, только область видимости :host/.jh-root
+   вместо :root), чтобы вход не открывался отдельной вкладкой, а жил в самой панели.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.jh-gate-lead {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jh-fg);
+}
+
+.jh-auth-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--jh-fg-muted);
+  font-size: 13px;
+}
+
+.jh-auth-active {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-pos-bg);
+  border: 1px solid var(--jh-pos-border);
+}
+.jh-auth-active-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.jh-auth-active-row svg {
+  flex-shrink: 0;
+  color: var(--jh-pos-fg);
+  margin-top: 1px;
+}
+.jh-auth-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jh-fg);
+}
+.jh-auth-hint {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+}
+.jh-auth-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 8px 13px;
+  border-radius: var(--jh-radius-control);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--jh-bg);
+  color: var(--jh-neg-fg);
+  border: 1px solid var(--jh-neg-border);
+  transition: background var(--jh-transition);
+}
+.jh-auth-logout:hover {
+  background: var(--jh-neg-bg);
+}
+.jh-auth-logout svg { color: var(--jh-neg-fg); }
+
+.jh-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jh-auth-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--jh-fg-body);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jh-auth-steps a {
+  color: var(--jh-info-fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.jh-auth-steps a:hover {
+  text-decoration: underline;
+}
+.jh-auth-revoked {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--jh-radius-control);
+  background: var(--jh-warn-bg);
+  color: var(--jh-warn-fg);
+  border: 1px solid var(--jh-warn-border);
+  font-size: 12px;
+}
+.jh-auth-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--jh-info-border);
+  border-radius: var(--jh-radius-control);
+  font-size: 14px;
+  color: var(--jh-fg);
+  background: var(--jh-info-bg);
+  outline: none;
+  transition: border-color var(--jh-transition), box-shadow var(--jh-transition);
+}
+.jh-auth-input::placeholder { color: var(--jh-fg-meta); }
+.jh-auth-input:focus {
+  border-color: var(--jh-info-fg);
+  box-shadow: 0 0 0 3px var(--jh-ring);
+}
+.jh-auth-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--jh-neg-fg);
+}
+.jh-auth-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--jh-fg-muted);
+}
+
+.jh-pop {
+  animation: jh-pop 220ms ease;
+}
+@keyframes jh-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}

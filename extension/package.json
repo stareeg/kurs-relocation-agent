@@ -1,0 +1,23 @@
+{
+  "name": "job-hunter-extension",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Career Copilot — Chrome MV3 extension (capture → triage → handoff на hh.ru и getmatch.ru)",
+  "scripts": {
+    "prebuild:ext": "npm test",
+    "build:ext": "node build.mjs",
+    "build:ext:ci": "node build.mjs",
+    "watch:ext": "node build.mjs --watch",
+    "test": "tsx tests/run-all.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.24.0",
+    "linkedom": "^0.18.13",
+    "playwright": "^1.61.1",
+    "tsx": "^4.23.0",
+    "typescript": "^5.7.2"
+  }
+}

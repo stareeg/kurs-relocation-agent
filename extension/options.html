@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Copilot - настройки</title>
+    <link rel="stylesheet" href="dist/settings-chrome.css" />
+  </head>
+  <body>
+    <div class="jh-card">
+      <div class="jh-brand" id="brand"></div>
+      <h1>Аккаунт</h1>
+      <p class="jh-sub">Вход по токену из Telegram-бота — тот же токен, что и в вебе.</p>
+
+      <div id="auth"></div>
+
+      <div class="jh-parser-config">
+        <p id="parser-config-meta" class="hint">Конфиг парсера: …</p>
+        <button type="button" class="secondary" id="parser-config-dump">Показать конфиг</button>
+        <pre id="parser-config-json" hidden></pre>
+      </div>
+
+      <p class="hint jh-options-hint">
+        Это резервная страница — обычно вход открывается прямо в панели на странице вакансии
+        (шестерёнка «Аккаунт»). Адрес сайта в расширение зашит на сборке, вводить его не нужно.
+      </p>
+    </div>
+
+    <script src="dist/options.js"></script>
+  </body>
+</html>

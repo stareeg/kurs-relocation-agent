@@ -1,0 +1,10 @@
+{
+  "name": "openrouter-relay",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Fixed-region OpenRouter proxy relay (docs/problems.md, 2026-08-05) — no dependencies.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

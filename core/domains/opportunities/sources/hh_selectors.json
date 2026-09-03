@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "selectors": {
+    "vacancy": {
+      "title": "[data-qa=\"vacancy-title\"]",
+      "company": "[data-qa=\"vacancy-company-name\"]",
+      "salary": "[data-qa=\"vacancy-salary\"]",
+      "description": "[data-qa=\"vacancy-description\"]",
+      "schedule": "[data-qa=\"vacancy-hiring-formats\"]",
+      "remote": "[data-qa=\"vacancy-label-work-schedule-remote\"]",
+      "workFormat": "[data-qa=\"work-formats-text\"]",
+      "employmentText": "[data-qa=\"common-employment-text\"]",
+      "scheduleByDays": "[data-qa=\"work-schedule-by-days-text\"]",
+      "workingHours": "[data-qa=\"working-hours-text\"]",
+      "experienceText": "[data-qa=\"vacancy-experience\"]",
+      "address": "[data-qa=\"vacancy-view-raw-address\"]",
+      "addressMap": "[data-qa=\"vacancy-address-with-map\"]",
+      "addCoverLetter": "[data-qa=\"vacancy-response-letter-toggle-text\"]",
+      "addCoverLetterPopup": "[data-qa=\"add-cover-letter\"]",
+      "coverLetterInput": "#cover-letter textarea",
+      "coverLetterInputPopup": "[data-qa=\"vacancy-response-popup-form-letter-input\"]",
+      "modalOverlay": "[data-qa=\"modal-overlay\"]",
+      "alreadyApplied": "[data-qa=\"vacancy-response-link-viewed\"]",
+      "archiveDescription": "[data-qa=\"vacancy-archive-description\"]",
+      "archiveHeader": "h2[data-qa=\"bloko-header-2\"]",
+      "responsesCount": "[data-qa=\"vacancy-view-responses-count\"]",
+      "responsesInfo": "[data-qa=\"vacancy-response-info\"]"
+    },
+    "serp": {
+      "vacancyCard": "[data-qa=\"vacancy-serp__vacancy\"]",
+      "title": "[data-qa=\"serp-item__title\"]",
+      "titleLink": "[data-qa=\"serp-item__title\"] a",
+      "employer": "[data-qa=\"vacancy-serp__vacancy-employer\"]",
+      "employerLink": "a[data-qa=\"vacancy-serp__vacancy-employer\"]",
+      "salary": "[data-qa=\"compensation\"]",
+      "address": "[data-qa=\"vacancy-serp__vacancy-address\"]",
+      "metro": "[data-qa=\"vacancy-serp__vacancy-metro\"]",
+      "respondBtn": "[data-qa=\"vacancy-serp__vacancy_response\"]",
+      "pagerNext": "[data-qa=\"pager-next\"]"
+    },
+    "responseLinks": [
+      "[data-qa=\"vacancy-response-link-top\"]",
+      "[data-qa=\"vacancy-response-link-bottom\"]",
+      "[data-qa=\"vacancy-response-link\"]",
+      "[data-qa=\"vacancy-serp__vacancy_response\"]"
+    ],
+    "fallbacks": {
+      "title": [
+        "h1[data-qa=\"vacancy-title\"]",
+        "h1.vacancy-title",
+        "[class*=\"vacancy-title\"]",
+        "h1"
+      ],
+      "company": [
+        "[data-qa=\"vacancy-company-name\"]",
+        "a[data-qa=\"vacancy-company-name\"]",
+        "[data-qa=\"vacancy-company\"] a",
+        ".vacancy-company-name a",
+        ".vacancy-company-name",
+        "a[class*=\"companyName\"]",
+        "[class*=\"employerName\"]"
+      ],
+      "salary": [
+        "[data-qa=\"vacancy-salary\"]",
+        "[data-qa=\"compensation\"]",
+        "[class*=\"vacancy-salary\"]"
+      ],
+      "description": [
+        "[data-qa=\"vacancy-description\"]",
+        ".vacancy-description",
+        ".vacancy-branded-user-content"
+      ],
+      "serpTitleLink": ["a[href*=\"/vacancy/\"]"],
+      "serpEmployer": [
+        "[data-qa=\"vacancy-serp__vacancy-employer\"]",
+        "[class*=\"vacancy-serp__employer\"]"
+      ],
+      "serpSalary": ["[data-qa=\"compensation\"]", "[class*=\"compensation\"]"]
+    },
+    "negotiations": {
+      "card": [
+        "[data-qa=\"negotiations-item\"]",
+        "[data-qa=\"negotiations__item\"]",
+        "[data-qa=\"negotiation-item\"]",
+        "article[data-qa*=\"negotiation\"]"
+      ],
+      "titleLink": "a[href*=\"/vacancy/\"]",
+      "company": [
+        "[data-qa=\"negotiations-item-company\"]",
+        "[data-qa=\"negotiations-item__company\"]",
+        "[data-qa=\"vacancy-serp__vacancy-employer\"]",
+        "a[href*=\"/employer/\"]"
+      ],
+      "statusBadge": [
+        "[data-qa=\"negotiations-item-status\"]",
+        "[data-qa=\"negotiation-status\"]",
+        "[data-qa*=\"employer-state\"]",
+        "[data-qa*=\"negotiation-status\"]"
+      ],
+      "date": "[data-qa=\"negotiations-item-date\"], time",
+      "lastMessage": [
+        "[data-qa=\"negotiations-item-message\"]",
+        "[data-qa*=\"message-preview\"]",
+        "[data-qa*=\"last-message\"]"
+      ]
+    },
+    "hrThread": {
+      "vacancyLink": "a[href*=\"/vacancy/\"]",
+      "companyLink": "a[href*=\"/employer/\"]",
+      "messageItem": [
+        "[data-qa*=\"negotiations-item-message\"]",
+        "[data-qa*=\"negotiation-letter\"]",
+        "[data-qa*=\"topic-message\"]",
+        "[data-qa*=\"chat-message\"]",
+        "[data-qa*=\"message-item\"]"
+      ],
+      "dayDivider": "[data-qa*=\"date-divider\"], [class*=\"date-divider\"], [class*=\"day-divider\"]"
+    }
+  },
+  "patterns": {
+    "appliedText": "hh_applied",
+    "responsesText": "hh_responses",
+    "negotiationStatus": "hh_negotiation_status"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "version": 4,
+  "flags": {
+    "auto_apply_enabled": true,
+    "auto_apply_hh_enabled": true,
+    "auto_apply_getmatch_enabled": true,
+    "auto_apply_habr_enabled": true,
+    "anketa_resume_enabled": true,
+    "discovery_enabled": true
+  },
+  "tuning": {
+    "auto_apply_tick_minutes": 5,
+    "discovery_tick_minutes": 0.5,
+    "max_real_applications_per_tick": 1,
+    "auto_apply_delay_ms": [120000, 300000],
+    "auto_apply_min_real_interval_ms": 120000,
+    "discovery_delay_ms": [30000, 90000],
+    "tab_load_timeout_ms": 20000,
+    "post_load_settle_ms": 500,
+    "vacancy_ready_timeout_ms": 130000,
+    "apply_confirm_timeout_ms": 25000,
+    "apply_reading_delay_ms": [1500, 4000]
+  },
+  "apply_selectors": {
+    "hh": {
+      "responseLinkTop": "[data-qa=\"vacancy-response-link-top\"]",
+      "responseLinkBottom": "[data-qa=\"vacancy-response-link-bottom\"]",
+      "alreadyApplied": "[data-qa=\"vacancy-response-link-view-topic\"]",
+      "attachLetterButton": "[data-qa=\"responded-success-attach-cover-letter\"]",
+      "letterTextarea": "[data-qa=\"vacancy-response-popup-form-letter-input\"]",
+      "letterSubmit": "[data-qa=\"vacancy-response-letter-submit\"]",
+      "anketaQuestionBody": "[data-qa=\"task-body\"]",
+      "anketaQuestionText": "[data-qa=\"task-question\"]",
+      "anketaSubmit": "[data-qa=\"vacancy-response-submit-popup\"]"
+    },
+    "getmatch": {
+      "form": ".b-apply-modal__form",
+      "coverLetterTextarea": "textarea[name=\"cover_letter\"], #apply_vacancy_info_comment"
+    }
+  },
+  "parse_selectors": {
+    "getmatch": {
+      "header": "section.b-vacancy-header, .b-vacancy-header",
+      "title": "section.b-vacancy-header h1, .b-vacancy-header h1, [class*=\"vacancy__title\"], h1[class*=\"vacancy\"]",
+      "companyLink": "section.b-vacancy-header a[href*=\"/companies/\"], .b-vacancy-header a[href*=\"/companies/\"], a[href*=\"/companies/\"]",
+      "salary": "section.b-vacancy-header h3, .b-vacancy-header h3, [class*=\"vacancy__salary\"]",
+      "locations": "section.b-location .b-vacancy-locations, .b-vacancy-locations, [class*=\"vacancy__location\"]",
+      "specs": "section.b-vacancy-v2 .b-specs, .b-vacancy .b-specs",
+      "stack": "section.b-vacancy-stack, .b-vacancy-stack",
+      "description": "section.b-vacancy-description, .b-vacancy-description.markdown, [class*=\"vacancy__description\"], [class*=\"vacancyDescription\"]",
+      "applyButton": "button[class*=\"response\"], a[class*=\"response\"], .b-apply-block button, section.b-vacancy-header ~ * button",
+      "archived": "[class*=\"vacancy\"][class*=\"archived\"], [class*=\"vacancy\"][class*=\"closed\"]",
+      "appliedBanner": ".b-notification_primary, .b-notification"
+    }
+  },
+  "text_signals": {
+    "hh": {
+      "already_applied": ["вы отклик", "отклик отправлен", "откликнулись", "уже отклик"]
+    },
+    "getmatch": {
+      "already_applied": ["вы откликнулись", "отклик отправлен", "отклик уже отправлен", "заявка отправлена"],
+      "archived": ["вакансия снята", "вакансия закрыта", "больше не принимает отклики", "не актуальна"],
+      "letter_required": ["сопроводительное письмо обязательно"]
+    }
+  }
+}

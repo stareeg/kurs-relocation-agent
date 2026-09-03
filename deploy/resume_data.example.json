@@ -1,0 +1,44 @@
+{
+  "personal": {
+    "full_name": "",
+    "gender": "",
+    "birth_date": "",
+    "city": "",
+    "work_countries": [],
+    "relocation": ""
+  },
+  "contacts": {
+    "phone": "",
+    "phone_preferred": false,
+    "email": "",
+    "telegram": "",
+    "site": "",
+    "other": []
+  },
+  "position": {
+    "title": "",
+    "salary_min": null,
+    "salary_comfortable": null,
+    "salary_currency": "RUB",
+    "employment": "",
+    "schedule": [],
+    "grade": [],
+    "company_types": [],
+    "categories": []
+  },
+  "search_criteria": {
+    "niches": [],
+    "target_companies": [],
+    "avoid_companies": [],
+    "dealbreakers": [],
+    "notes": ""
+  },
+  "experience": [],
+  "experience_total": "",
+  "education_level": "",
+  "education": [],
+  "courses": [],
+  "key_skills": [],
+  "languages": [],
+  "about": ""
+}
