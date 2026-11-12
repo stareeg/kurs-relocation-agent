@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -40,6 +41,7 @@ from core.domains.profile.strengthen_quality import (
 )
 from core.kernel import ports
 from core.kernel.errors import LlmError
+from core.kernel.text.style_lint import StyleIssue
 from core.platform.observability import event
 
 # Имена агентов = ключи реестра LlmFeature / колонка llm_usage (без прямого слага модели).
@@ -283,7 +285,7 @@ def _normalize_block_output(text: str, *, kind: str) -> str:
     return ensure_bullet_format(text, kind=kind)
 
 
-def _log_style_issues(issues: list[object], *, kind: str, mode: str) -> None:
+def _log_style_issues(issues: Sequence[StyleIssue], *, kind: str, mode: str) -> None:
     if not issues:
         return
     sample = "; ".join(f"{i.code}: {i.message}" for i in issues[:3])

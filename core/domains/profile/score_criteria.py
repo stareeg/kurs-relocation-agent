@@ -164,9 +164,7 @@ def score_criteria_alignment(data: ResumeData, resume_text: str) -> int:
 
 def blend_role_fit(primary: int, criteria_alignment: int) -> int:
     """Смешать LLM/эвристику (85%) и оси поиска (15%)."""
-    blended = (
-        ROLE_FIT_PRIMARY_WEIGHT * primary + ROLE_FIT_CRITERIA_WEIGHT * criteria_alignment
-    )
+    blended = ROLE_FIT_PRIMARY_WEIGHT * primary + ROLE_FIT_CRITERIA_WEIGHT * criteria_alignment
     return max(0, min(100, round(blended)))
 
 

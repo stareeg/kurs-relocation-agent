@@ -893,7 +893,10 @@ def assemble_score(
     if not notes:
         notes = [
             n
-            for n in (format_role_fit_note(x) for x in _role_fit_fallback_notes(data, report, resume_text=resume_text))
+            for n in (
+                format_role_fit_note(x)
+                for x in _role_fit_fallback_notes(data, report, resume_text=resume_text)
+            )
             if n
         ]
     market_missing = [c.name for c in report.missing[:8]]
