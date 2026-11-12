@@ -14,6 +14,23 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(globalThis as any).location = { href: 'https://career.habr.com/profile/responses' }
 
+// Отклики в payload датированы августом 2026, а парсер считает отклик старше
+// STALE_INTERACTION_DAYS (90 дней от `new Date()`) архивным. Фиксируем «сейчас»,
+// иначе тест краснеет сам по себе с ходом календаря.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const RealDate: any = Date
+const FIXED_NOW = RealDate.parse('2026-08-15T12:00:00+03:00')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+;(globalThis as any).Date = class extends RealDate {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(...args: any[]) {
+    super(...(args.length ? args : [FIXED_NOW]))
+  }
+  static now() {
+    return FIXED_NOW
+  }
+}
+
 // ── Форма payload из 0x55AAh/habr_career: { list: Response[], meta } ──
 const payload = {
   list: [

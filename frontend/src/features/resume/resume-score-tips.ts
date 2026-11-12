@@ -3,7 +3,7 @@
 import type { ResumeScoreBreakdown } from "@/api/resume"
 
 const SLOP_PREFIX =
-  /(?:^|\s)(?:(?:буллет\s+)?(?:слаб(?:ый|ая|ое)|strong|weak)[^:—\-]*[:—\-]\s*|(?:рекоменду(?:ю|ется)|следует|желательно|стоит|нужно)\s+|(?:вердикт|оценка|комментарий)\s*[:—\-]\s*)+/gi
+  /(?:^|\s)(?:(?:буллет\s+)?(?:слаб(?:ый|ая|ое)|strong|weak)[^:—-]*[:—-]\s*|(?:рекоменду(?:ю|ется)|следует|желательно|стоит|нужно)\s+|(?:вердикт|оценка|комментарий)\s*[:—-]\s*)+/gi
 
 const META_WORDS = /\b(?:слаб(?:ый|ая|ое)|strong|weak|вердикт)\b/gi
 
@@ -36,7 +36,7 @@ export function formatWritingTip(ref: string, text: string, reason?: string | nu
   const place = ref.trim()
   let quote = text.trim()
   if (quote.length > quoteMax) quote = `${quote.slice(0, quoteMax - 1).trim()}…`
-  let tip = normalizeScoreTip(reason ?? "") || DEFAULT_WRITING_TIP
+  const tip = normalizeScoreTip(reason ?? "") || DEFAULT_WRITING_TIP
   if (place) return `${place}: «${quote}» — ${tip}`
   return `«${quote}» — ${tip}`
 }
