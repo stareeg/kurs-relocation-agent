@@ -41,11 +41,14 @@ jobs:
   deploy:
     # workflow_dispatch: github.event.workflow_run пуст → старый if всегда false → skipped.
     # workflow_run: только зелёный CI на main (не деплоим красный / чужую ветку).
+    # Стенда пока нет: деплой включается в шаге D-1 переменной репозитория DEPLOY_ENABLED=true
+    # (Settings → Secrets and variables → Actions → Variables) вместе с секретами выше.
     if: >
-      github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'workflow_run'
-          && github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.head_branch == 'main')
+      vars.DEPLOY_ENABLED == 'true'
+      && (github.event_name == 'workflow_dispatch'
+          || (github.event_name == 'workflow_run'
+              && github.event.workflow_run.conclusion == 'success'
+              && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
