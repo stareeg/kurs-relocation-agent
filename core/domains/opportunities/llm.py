@@ -49,7 +49,7 @@ SALARY_ESTIMATE = register(
         max_tokens=2048,
         budget_ms=75_000,
         retries=1,
-        reasoning_effort="medium",  # L-14
+        reasoning_effort="high",  # L-14
         prompt_in_code=True,
         # schema=SalaryEstimate передаётся в run() — класс живёт в salary_estimator
         # (импорт сюда даёт цикл llm → estimator → prompt → llm).

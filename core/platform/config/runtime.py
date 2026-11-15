@@ -48,6 +48,11 @@ _current_account_id: ContextVar[int | None] = ContextVar("current_account_id", d
 # инвалидирует кэш явно (`core.platform.openrouter_keys._apply_key` →
 # `cache_account_openrouter_key`), TTL для этого не нужен.
 _account_key_cache: dict[int, tuple[str, float]] = {}
+# account_id -> (использовать личный ключ, когда). A-0, «переключатель»: при настроенном
+# серверном провайдере личный ключ аккаунта работает только по явному согласию человека
+# (`use_personal_openrouter_key` в account_settings). Без серверного провайдера переключатель
+# не нужен — личный ключ остаётся единственным путём, как в friend-install.
+_account_personal_key_cache: dict[int, tuple[bool, float]] = {}
 _ACCOUNT_KEY_REFRESH_S = 15.0
 _ACCOUNT_KEY_RETAIN_S = 900.0
 # Совместимость: имя читают тесты/старые импорты — это именно интервал обновления.
@@ -110,6 +115,28 @@ def account_openrouter_key_cache_stale(account_id: int) -> bool:
     return cached is None or (time.monotonic() - cached[1]) >= _ACCOUNT_KEY_REFRESH_S
 
 
+def cache_account_use_personal_key(account_id: int, active: bool) -> None:
+    """Положить выбор аккаунта «использовать свой ключ OpenRouter» (A-0)."""
+    _evict_stale_account_keys()
+    _account_personal_key_cache[account_id] = (bool(active), time.monotonic())
+
+
+def current_account_use_personal_key() -> bool:
+    """Выбрал ли аккаунт текущего запроса свой ключ вместо серверной модели.
+
+    False — вне контекста аккаунта (фон/скрипт) и по умолчанию: на стенде модель курса.
+    """
+    account_id = _current_account_id.get()
+    if account_id is None:
+        return False
+    cached = _account_personal_key_cache.get(account_id)
+    if cached is None:
+        return False
+    if time.monotonic() - cached[1] >= _ACCOUNT_KEY_RETAIN_S:
+        return False
+    return cached[0]
+
+
 def _evict_stale_account_keys() -> None:
     """Выкинуть давно не обновлявшиеся записи — без этого словарь копит ключи ушедших аккаунтов
     навсегда. Порог — срок ХРАНЕНИЯ (`_ACCOUNT_KEY_RETAIN_S`), не интервал обновления: выкидывать
@@ -123,6 +150,7 @@ def _evict_stale_account_keys() -> None:
     ]
     for aid in stale:
         _account_key_cache.pop(aid, None)
+        _account_personal_key_cache.pop(aid, None)
 
 
 def current_account_openrouter_key() -> str:
@@ -153,6 +181,7 @@ def reset_runtime_for_tests() -> None:
     _runtime_openrouter_key = None
     _env_openrouter_key = None
     _account_key_cache.clear()
+    _account_personal_key_cache.clear()
 
 
 def apply_runtime_to(settings: CoreSettings) -> CoreSettings:
@@ -188,8 +217,10 @@ __all__ = [
     "account_openrouter_key_cache_stale",
     "apply_runtime_to",
     "cache_account_openrouter_key",
+    "cache_account_use_personal_key",
     "current_account_id",
     "current_account_openrouter_key",
+    "current_account_use_personal_key",
     "reset_current_account_id",
     "reset_runtime_for_tests",
     "runtime_openrouter_key",

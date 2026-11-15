@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 import bot_app.access as access
+from core.platform.repo.accounts import AccountRecord
 
 
 @pytest.fixture(autouse=True)
@@ -154,6 +155,11 @@ async def test_resolve_operator_account_links_env_admin_without_db_row(
     assert invalidated["done"] is True
 
 
+async def _no_existing(*, telegram_user_id: int) -> None:
+    _ = telegram_user_id
+    return None
+
+
 @pytest.mark.asyncio
 async def test_resolve_operator_account_relinks_when_different_user(
     monkeypatch: pytest.MonkeyPatch,
@@ -171,8 +177,54 @@ async def test_resolve_operator_account_relinks_when_different_user(
 
     monkeypatch.setattr(access, "resolve_owner", fake_resolve_owner)
     monkeypatch.setattr(access, "upsert_account", fake_upsert_account)
+    monkeypatch.setattr(access, "get_account_by_telegram_user_id", _no_existing)
     monkeypatch.setattr(access, "invalidate", lambda: None)
 
     result = await access.resolve_operator_account(user_id=2, username="second-admin")
 
     assert result.telegram_user_id == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_operator_account_promotes_existing_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Человек уже пришёл как member, потом его ник попал в ADMIN_USERNAMES: роль повышается,
+    иначе админ-гейт API (`role='owner'`) отвечает 403, хотя бот считает его оператором."""
+    member = AccountRecord(
+        id=2,
+        telegram_user_id=533097278,
+        telegram_username="dannnfsl",
+        telegram_chat_id=533097278,
+        role="member",
+        status="active",
+    )
+    promoted: dict[str, Any] = {}
+
+    async def fake_resolve_owner(*, force: bool = False) -> Any:
+        _ = force
+        return None
+
+    async def fake_get_account(*, telegram_user_id: int) -> Any:
+        assert telegram_user_id == member.telegram_user_id
+        return member
+
+    async def fake_set_role(account_id: int, role: str) -> None:
+        promoted["args"] = (account_id, role)
+
+    async def fail_upsert(**kwargs: Any) -> Any:  # noqa: ANN401 — не должен вызываться
+        raise AssertionError(f"upsert для существующего аккаунта не нужен: {kwargs}")
+
+    monkeypatch.setattr(access, "resolve_owner", fake_resolve_owner)
+    monkeypatch.setattr(access, "get_account_by_telegram_user_id", fake_get_account)
+    monkeypatch.setattr(access, "set_account_role", fake_set_role)
+    monkeypatch.setattr(access, "upsert_account", fail_upsert)
+    monkeypatch.setattr(access, "invalidate", lambda: None)
+
+    result = await access.resolve_operator_account(
+        user_id=member.telegram_user_id, username="dannnfsl"
+    )
+
+    assert promoted["args"] == (2, "owner")
+    assert result.role == "owner"
+    assert result.id == 2

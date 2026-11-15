@@ -101,23 +101,29 @@ def test_invalid_effort_rejected_at_declaration():
         )
 
 
-def test_heavy_features_declare_medium_light_ones_skip():
+def test_feature_effort_matches_p04_review():
+    """P0-4: `high` — только вердикты и планы на коротком входе, остальное `low`.
+
+    Таблица решений — `probe/2026-11-15-glm53flash-stand/README.md`; правка здесь означает,
+    что решение пересмотрели, а не что тест «подогнали».
+    """
     from core.platform.llm.registry import all_features, ensure_features_loaded
 
     ensure_features_loaded()
     by_name = {f.name: f for f in all_features()}
 
+    for name in ("salary_estimate", "offer_negotiation", "anketa_answer", "debrief"):
+        assert by_name[name].reasoning_effort == "high", name
+
     for name in (
         "situation",
         "prep",
         "prep_pack",
-        "debrief",
         "screening_pitch",
         "screening_questions",
-        "salary_estimate",
-        "offer_negotiation",
+        "cover_letter_intl",
     ):
-        assert by_name[name].reasoning_effort == "medium", name
+        assert by_name[name].reasoning_effort == "low", name
 
     # Резюме-фичи — на reserve-тире (Gemini 3.7 Flash); reasoning_effort не задан,
     # т.к. усиление/критик — extraction/редактирование без рассуждения.

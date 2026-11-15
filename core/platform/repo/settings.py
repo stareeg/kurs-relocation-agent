@@ -322,12 +322,22 @@ async def prime_runtime_openrouter_key_for_account(
     `api.security.require_account(_context)` на каждый HTTP-запрос и из account-middleware
     бота на каждый апдейт — дёшево при тёплом кэше (только сравнение времени, без SELECT).
     """
-    from core.config import account_openrouter_key_cache_stale, cache_account_openrouter_key
+    from core.config import (
+        account_openrouter_key_cache_stale,
+        cache_account_openrouter_key,
+        cache_account_use_personal_key,
+    )
 
     if not account_openrouter_key_cache_stale(account_id):
         return
     stored = await get_setting("openrouter_api_key", default=None, account_id=account_id, db=db)
     cache_account_openrouter_key(account_id, stored if isinstance(stored, str) else None)
+    # A-0: рядом с ключом читаем выбор «использовать свой ключ вместо модели курса» — LLM-вызов
+    # внутри запроса обязан видеть и его, иначе после включения тумблера до 15 с шёл бы сервер.
+    personal = await get_setting(
+        "use_personal_openrouter_key", default=False, account_id=account_id, db=db
+    )
+    cache_account_use_personal_key(account_id, personal is True)
 
 
 __all__ = [

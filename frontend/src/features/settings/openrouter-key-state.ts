@@ -9,7 +9,7 @@ import type { AppSettings } from "@/api/settings"
  * - `managed` — ключ выдал администратор: самого ключа человек не видит нигде и сбросить его
  *   не может (кнопка сброса отключила бы ему продукт), но вставить свой взамен вправе;
  * - `server` — A-0: ключ не нужен, модель курса выдаёт серверный провайдер; свой ключ можно
- *   вставить для тестов, расход тогда пойдёт на счёт OpenRouter человека;
+ *   вставить для тестов (расход тогда на счёт OpenRouter человека) и включить тумблером;
  * - `requested` — заявка отправлена, ждём решения;
  * - `rejected` — по заявке отказали, ключа нет;
  * - `missing` — ключа нет, серверной модели нет и заявок не было.
@@ -18,6 +18,11 @@ export type OpenRouterKeyView = "own" | "managed" | "server" | "requested" | "re
 
 export function openRouterKeyView(settings: AppSettings): OpenRouterKeyView {
   if (settings.openrouter_key_configured) {
+    // A-0: ключ есть, но на стенде он работает только по включённому тумблеру. Выключен —
+    // человек на модели курса, и карточка должна показывать именно это, а не «ключ принят».
+    if (settings.server_llm_available && !settings.personal_openrouter_key_active) {
+      return "server"
+    }
     return settings.openrouter_key_origin === "admin" ? "managed" : "own"
   }
   if (settings.server_llm_available) return "server"

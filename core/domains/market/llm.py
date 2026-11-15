@@ -17,7 +17,7 @@ SITUATION_FEAT = register(
         max_tokens=8192,
         budget_ms=120_000,
         retries=1,
-        reasoning_effort="medium",  # L-14: аналитика рынка
+        reasoning_effort="low",  # P0-4: вход — факты рынка; high на длинном входе 90+ с
         # schema динамическая (несколько параллельных кусков) — передаётся в run().
     )
 )

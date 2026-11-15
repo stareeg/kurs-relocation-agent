@@ -137,22 +137,22 @@ def test_get_chat_model_ignores_other_accounts_cached_key() -> None:
 async def test_prime_reads_db_once_within_ttl_window(monkeypatch: pytest.MonkeyPatch) -> None:
     from core.platform.repo import settings as repo_settings
 
-    calls = {"n": 0}
+    calls: list[str] = []
 
     async def fake_get_setting(
         key: str, default: Any = None, *, account_id: int | None = None, db: Any = None
     ) -> Any:
-        calls["n"] += 1
-        assert key == "openrouter_api_key"
+        calls.append(key)
         assert account_id == 5
-        return "sk-or-v1-fresh"
+        return "sk-or-v1-fresh" if key == "openrouter_api_key" else default
 
     monkeypatch.setattr(repo_settings, "get_setting", fake_get_setting)
 
     await repo_settings.prime_runtime_openrouter_key_for_account(5)
     await repo_settings.prime_runtime_openrouter_key_for_account(5)  # тёплый кэш — не бьёт в БД
 
-    assert calls["n"] == 1
+    # Два чтения за prime: сам ключ и тумблер «использовать мой ключ» (A-0).
+    assert calls == ["openrouter_api_key", "use_personal_openrouter_key"]
     assert cfg_runtime.account_openrouter_key_cache_stale(5) is False
     token = cfg_runtime.set_current_account_id(5)
     try:
@@ -179,7 +179,8 @@ async def test_prime_caches_absence_as_empty_not_as_repeated_miss(
 
     await repo_settings.prime_runtime_openrouter_key_for_account(9)
 
-    assert calls["n"] == 1
+    # Ключ + тумблер, и оба «пусто» кэшируются, а не перечитываются на каждом запросе.
+    assert calls["n"] == 2
     assert cfg_runtime.account_openrouter_key_cache_stale(9) is False
 
 

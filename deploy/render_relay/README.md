@@ -44,15 +44,40 @@ Cloudflare) — там прежний воркер остаётся как ес�
    ```
    Первое — `ok`, второе — `{"data":{...}}` с полями ключа (не `{"success":false,...}"`).
 
+## Режим A-0: ключ курса живёт на релее, не на стенде
+
+Релей умеет подменять служебный токен настоящим ключом (`RELAY_TOKEN` → `OPENROUTER_API_KEY`
+из окружения Render). Тогда ключ OpenRouter курса не попадает ни в git, ни в `.env` стенда, ни
+к одногруппникам в браузер. Личный ключ человека приходит со своим `Authorization` и проходит
+как есть — BYOK не ломается.
+
+Проверка поведения без сети и секретов: `node deploy/render_relay/selftest.js`.
+
 ## Подключить к бэкенду
 
-На ВМ, в `.env`:
+1. В дашборде Render завести сервис (или задеплоить `render.yaml` из корня репозитория —
+   там всё то же самое: root `deploy/render_relay`, free, Frankfurt, `/health`).
+2. Задать env: `OPENROUTER_API_KEY` — настоящий ключ курса; `RELAY_TOKEN` — сгенерированное
+   значение; `OPENROUTER_ORIGIN=https://openrouter.ai`.
+3. На ВМ, в `.env`:
 ```
 OPENROUTER_BASE_URL=https://<имя>.onrender.com/api/v1
+OPENROUTER_API_KEY=<RELAY_TOKEN из Render>
+RESERVE_MODEL=openai/deepseek/deepseek-v4.1-flash
 ```
-Перезапустить `api`+`bot` (иначе `.env` не перечитается):
+   `RESERVE_MODEL` — алиас для LiteLLM (`openai/<slug OpenRouter>`): запасная модель курса —
+   DeepSeek V4.1 Flash.
+4. Перезапустить `api` и `litellm` (иначе `.env` не перечитается):
 ```
-docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d api bot
+docker compose -f deploy/compose.yaml -f deploy/compose.prod.yaml --env-file .env up -d api litellm
 ```
-Лог при старте — `OpenRouter прогрет: GET /models → 200` (`core/platform/http/client.py`) вместо
-`403`.
+   Лог при старте api — `OpenRouter прогрет: GET /models → 200` (`core/platform/http/client.py`)
+   вместо `403`.
+5. Проверка reserve: `docker exec copilot-api-1 python -c "import urllib.request,json,os; \
+   r=urllib.request.Request(os.environ['SERVER_LLM_BASE_URL']+'/chat/completions', \
+   data=json.dumps({'model':'openrouter-reserve','messages':[{'role':'user','content':'привет'}],\
+   'max_tokens':16}).encode(), headers={'Authorization':'Bearer '+os.environ['SERVER_LLM_API_KEY'],\
+   'Content-Type':'application/json'}); print(urllib.request.urlopen(r,timeout=90).status)"` — 200
+   вместо 500.
+
+Без ключа `reserve` отвечает 500, а основной маршрут (`glm-5.3-flash`) продолжает работать.

@@ -153,6 +153,13 @@ async def _load_response(*, account_id: int | None) -> AppSettingsResponse:
             detail="Параметры в БД повреждены — проверьте таблицу app_settings",
         ) from exc
     key_state = await openrouter_keys.key_state(account_id)
+    server_available = get_core_settings().server_llm_available()
+    use_personal = await get_setting(
+        "use_personal_openrouter_key", default=False, account_id=account_id
+    )
+    # Фактический режим: свой ключ работает, если человек включил тумблер, либо если серверного
+    # провайдера нет вовсе (friend-install — там ключ единственный путь).
+    personal_active = key_state.configured and (use_personal is True or not server_available)
     return AppSettingsResponse(
         scoring_weights=scoring_weights,
         scoring_importance=scoring_importance,
@@ -162,7 +169,9 @@ async def _load_response(*, account_id: int | None) -> AppSettingsResponse:
         company_adjustments=company_adjustments,
         salary_min_override=salary_override,
         openrouter_key_configured=key_state.configured,
-        server_llm_available=get_core_settings().server_llm_available(),
+        server_llm_available=server_available,
+        use_personal_openrouter_key=use_personal is True,
+        personal_openrouter_key_active=personal_active,
         openrouter_key_set_at=key_state.issued_at,
         openrouter_key_origin=key_state.origin,
         openrouter_key_request_status=key_state.request_status,
@@ -232,6 +241,19 @@ async def patch_app_settings(
                 await openrouter_keys.save_own_key(account_id=account_id, raw_key=cleaned)
         except openrouter_keys.OpenRouterKeyError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if "use_personal_openrouter_key" in fields_set and body.use_personal_openrouter_key is not None:
+        if (
+            body.use_personal_openrouter_key
+            and not await openrouter_keys.is_openrouter_key_configured(account_id=account_id)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Сначала вставьте свой ключ OpenRouter — переключать нечего",
+            )
+        await openrouter_keys.set_personal_key_use(
+            account_id=account_id, active=body.use_personal_openrouter_key
+        )
 
     if "extension_confirmed" in fields_set and body.extension_confirmed is not None:
         await set_extension_confirmed(body.extension_confirmed, account_id=account_id)

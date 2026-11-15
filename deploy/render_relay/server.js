@@ -17,6 +17,17 @@ const https = require("https");
 
 const PORT = process.env.PORT || 3000;
 const OPENROUTER_PATH = /^\/api\//;
+// Куда проксируем. Переопределяется ради самопроверки (deploy/render_relay/selftest.js):
+// в проде всегда OpenRouter.
+const ORIGIN = new URL(process.env.OPENROUTER_ORIGIN || "https://openrouter.ai");
+// A-0: ключ OpenRouter курса живёт ТОЛЬКО здесь, в окружении Render. LiteLLM стенда ходит
+// на релей со служебным токеном (RELAY_TOKEN), релей подменяет его настоящим ключом.
+// Запрос с любым другим Authorization (личный ключ человека) проходит как есть — BYOK не
+// ломается и не утекает на общий счёт.
+const RELAY_TOKEN = (process.env.RELAY_TOKEN || "").trim();
+const UPSTREAM_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
+const TRANSPORT = ORIGIN.protocol === "http:" ? http : https;
+const ORIGIN_PORT = Number(ORIGIN.port || (ORIGIN.protocol === "http:" ? 80 : 443));
 
 // Тот же принцип, что в deploy/cloudflare/proxy_worker.js: не пересылать заголовки,
 // раскрывающие реальный адрес/платформу вызывающей стороны.
@@ -44,6 +55,15 @@ function cleanHeaders(rawHeaders) {
   return out;
 }
 
+function upstreamHeaders(rawHeaders) {
+  const headers = cleanHeaders(rawHeaders);
+  if (!RELAY_TOKEN || !UPSTREAM_KEY) return headers;
+  if ((headers.authorization || "") === `Bearer ${RELAY_TOKEN}`) {
+    headers.authorization = `Bearer ${UPSTREAM_KEY}`;
+  }
+  return headers;
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/" || req.url === "/health") {
     res.writeHead(200, { "content-type": "text/plain" });
@@ -57,12 +77,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const upstreamReq = https.request(
+  const upstreamReq = TRANSPORT.request(
     {
-      hostname: "openrouter.ai",
+      hostname: ORIGIN.hostname,
+      port: ORIGIN_PORT,
       path: req.url,
       method: req.method,
-      headers: cleanHeaders(req.headers),
+      headers: upstreamHeaders(req.headers),
     },
     (upstreamRes) => {
       res.writeHead(upstreamRes.statusCode, upstreamRes.headers);
@@ -79,5 +100,8 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`openrouter relay listening on :${PORT}`);
+  console.log(
+    `openrouter relay listening on :${PORT} upstream=${ORIGIN.origin} ` +
+      `key_injection=${RELAY_TOKEN && UPSTREAM_KEY ? "on" : "off"}`,
+  );
 });

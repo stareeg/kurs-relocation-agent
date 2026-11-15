@@ -27,7 +27,7 @@ COVER_LETTER_INTL = register(
     LlmFeature(
         name="cover_letter_intl",
         tier="advanced",
-        reasoning_effort="medium",
+        reasoning_effort="low",
         temperature=0.4,
         max_tokens=2048,
         budget_ms=60_000,
@@ -142,7 +142,7 @@ ARCHIVE_DISPOSITION = register(
     )
 )
 # Фаза 3.2 (auto_apply_roadmap_2026_08_17.md) — ответы на анкету работодателя при отклике.
-# tier=advanced + reasoning_effort="medium" (не "basic", как остальной pipeline) — те же
+# tier=advanced + reasoning_effort="high" (не "basic", как остальной pipeline) — те же
 # основания, что у screening_questions (preparation/llm.py): ответы должны точно отражать
 # факты резюме, а не звучать правдоподобно — цена ошибки выше, чем у обычного письма.
 ANKETA_ANSWER = register(
@@ -153,7 +153,7 @@ ANKETA_ANSWER = register(
         max_tokens=2048,
         budget_ms=45_000,
         retries=1,
-        reasoning_effort="medium",
+        reasoning_effort="high",
         prompt_in_code=True,
     )
 )

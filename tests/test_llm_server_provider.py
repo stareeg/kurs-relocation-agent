@@ -13,7 +13,7 @@ from langchain_core.messages import HumanMessage
 
 from core.platform.config import runtime as cfg_runtime
 from core.platform.config.llm import LlmSettings, ServerLlmSettings
-from core.platform.config.runtime import llm_available
+from core.platform.config.runtime import cache_account_use_personal_key, llm_available
 from core.platform.llm.openrouter_chat import (
     OpenRouterChatModel,
     OpenRouterError,
@@ -81,8 +81,9 @@ def test_account_without_key_goes_to_server_provider() -> None:
     assert model.tier_fallback_model == ""
 
 
-def test_personal_key_wins_over_server_provider() -> None:
+def test_personal_key_with_toggle_wins_over_server_provider() -> None:
     cfg_runtime.cache_account_openrouter_key(42, ACCOUNT_KEY)
+    cache_account_use_personal_key(42, True)
     token = cfg_runtime.set_current_account_id(42)
     try:
         model = get_chat_model("advanced", settings=_settings())
@@ -218,3 +219,43 @@ def test_llm_available_account_key_counts_without_server() -> None:
 
 def test_llm_available_process_key_counts_for_background() -> None:
     assert llm_available(settings=_Settings(openrouter_api_key="sk-or-v1-process")) is True
+
+
+def test_personal_key_needs_toggle_when_server_is_configured() -> None:
+    cfg_runtime.cache_account_openrouter_key(42, ACCOUNT_KEY)
+    token = cfg_runtime.set_current_account_id(42)
+    try:
+        model = get_chat_model("advanced", settings=_settings())
+    finally:
+        cfg_runtime.reset_current_account_id(token)
+    # Тумблер выключен по умолчанию: даже со своим ключом человек на модели курса.
+    assert model.base_url == SERVER_BASE
+    assert model.api_key == SERVER_KEY
+
+
+def test_personal_key_with_toggle_on_goes_to_openrouter() -> None:
+    cfg_runtime.cache_account_openrouter_key(42, ACCOUNT_KEY)
+    cache_account_use_personal_key(42, True)
+    token = cfg_runtime.set_current_account_id(42)
+    try:
+        model = get_chat_model("advanced", settings=_settings())
+    finally:
+        cfg_runtime.reset_current_account_id(token)
+    assert model.base_url == "https://openrouter.ai/api/v1"
+    assert model.api_key == ACCOUNT_KEY
+    assert model.api_style == "openrouter"
+
+
+def test_personal_key_works_without_server_provider_even_with_toggle_off() -> None:
+    cfg_runtime.cache_account_openrouter_key(42, ACCOUNT_KEY)
+    token = cfg_runtime.set_current_account_id(42)
+    try:
+        model = get_chat_model(
+            "advanced",
+            settings=_settings(server_llm_base_url="", server_llm_api_key=""),
+        )
+    finally:
+        cfg_runtime.reset_current_account_id(token)
+    # Friend-install: серверного провайдера нет, свой ключ — единственный путь.
+    assert model.base_url == "https://openrouter.ai/api/v1"
+    assert model.api_key == ACCOUNT_KEY

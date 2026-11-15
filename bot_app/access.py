@@ -19,6 +19,7 @@ Env (`ADMIN_USER_ID` / `ADMIN_USER_IDS` / `ADMIN_USERNAMES`) — бутстра�
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import Any
 
 from bot_app.config import BotSettings, get_bot_settings
@@ -26,6 +27,7 @@ from core.domains.profile.telegram_link import get_owner
 from core.platform.repo.accounts import (
     AccountRecord,
     get_account_by_telegram_user_id,
+    set_account_role,
     upsert_account,
 )
 
@@ -193,6 +195,16 @@ async def resolve_operator_account(
     current = await resolve_owner()
     if current is not None and current.telegram_user_id == user_id:
         return current
+    existing = await get_account_by_telegram_user_id(telegram_user_id=user_id)
+    if existing is not None and existing.status == "active":
+        # Уже есть строка (человек раньше пришёл как member, а теперь попал в ADMIN_USERNAMES).
+        # `upsert_account` роль на update не меняет специально, поэтому повышение — отдельным
+        # шагом; без него аккаунт остаётся member и админ-гейт API отвечает 403.
+        if existing.role != "owner":
+            await set_account_role(existing.id, "owner")
+            invalidate()
+            return replace(existing, role="owner")
+        return existing
     # upsert_account (не set_owner): chat_id тут может быть None (нет апдейта с чатом под
     # рукой в вызывающем коде) — upsert_account.coalesce сохранит уже записанный chat_id,
     # set_owner потребовал бы int и затёр бы его нулём.

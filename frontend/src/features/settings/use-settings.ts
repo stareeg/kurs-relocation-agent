@@ -386,6 +386,21 @@ export function useRemoveDiscoveryEvent() {
  * PATCH ушёл за 31 мс, а фронт уже показал Timeout после ~76 с ожидания в браузере). Сверка
  * с GET внутри mutationFn — чтобы mutateAsync резолвился и автосейв мог очистить поле.
  */
+/** A-0: тумблер «использовать мой ключ OpenRouter» вместо модели курса. */
+export function useSetPersonalKeyUse() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (active: boolean) =>
+      patchAppSettings({ use_personal_openrouter_key: active }, { skipSeriousToast: true }),
+    onSuccess: (saved, active) => {
+      qc.setQueryData<AppSettings>(KEY, saved)
+      void qc.invalidateQueries({ queryKey: AUTH_STATUS_KEY })
+      toast.success(active ? "Переключено на ваш ключ" : "Переключено на модель курса")
+    },
+    onError: (err: Error) => toast.error(err.message || "Не удалось переключить ключ"),
+  })
+}
+
 export function useSaveOpenRouterKey() {
   const qc = useQueryClient()
   return useMutation({

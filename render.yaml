@@ -1,0 +1,29 @@
+# Render Blueprint: релей OpenRouter для стенда курса (A-0).
+#
+# Почему отдельный сервис — `deploy/render_relay/README.md`. Коротко: Cloudflare Worker
+# исполняется в Хельсинки и получает от OpenRouter 403; обычный сервис в фиксированном
+# регионе этого лишён.
+#
+# Ключ OpenRouter курса вводится в дашборде Render (sync: false), а не в git и не в .env
+# стенда: релей подменяет служебный токен настоящим ключом (RELAY_TOKEN → OPENROUTER_API_KEY).
+# Личный ключ человека проходит как есть, поэтому BYOK не ломается.
+services:
+  - type: web
+    name: openrouter-relay
+    runtime: node
+    rootDir: deploy/render_relay
+    plan: free
+    region: frankfurt
+    buildCommand: ""
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: OPENROUTER_ORIGIN
+        value: https://openrouter.ai
+      # Служебный токен для стенда: Render сгенерирует значение, его нужно скопировать в
+      # OPENROUTER_API_KEY стенда (см. README релея).
+      - key: RELAY_TOKEN
+        generateValue: true
+      # Настоящий ключ OpenRouter курса — только в дашборде Render.
+      - key: OPENROUTER_API_KEY
+        sync: false

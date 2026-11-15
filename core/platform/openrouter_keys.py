@@ -281,6 +281,19 @@ class KeyState:
     request_status: requests.Status | None = None
 
 
+PERSONAL_SETTING = "use_personal_openrouter_key"
+
+
+async def set_personal_key_use(*, account_id: int | None, active: bool) -> None:
+    """Тумблер «использовать мой ключ» (A-0). Имеет смысл только при серверном провайдере:
+    без него личный ключ — единственный путь, и выбор ничего не меняет."""
+    from core.config import cache_account_use_personal_key
+
+    await _set_setting(PERSONAL_SETTING, bool(active), account_id=account_id)
+    if account_id is not None:
+        cache_account_use_personal_key(account_id, active)
+
+
 async def _apply_key(
     account_id: int | None,
     raw_key: str | None,
@@ -298,6 +311,11 @@ async def _apply_key(
 
     if account_id is not None:
         cache_account_openrouter_key(account_id, cleaned)
+        # Ключ вставил сам человек → он хочет им пользоваться (A-0). Ключ выдал оператор →
+        # модель курса остаётся по умолчанию, а выданный ключ ждёт явного тумблера.
+        await set_personal_key_use(
+            account_id=account_id, active=(cleaned is not None and origin == "self")
+        )
         if cleaned is None:
             await origins.delete_origin(account_id)
         else:

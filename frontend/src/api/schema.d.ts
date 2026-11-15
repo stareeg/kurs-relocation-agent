@@ -6726,6 +6726,16 @@ export interface components {
              * @default false
              */
             server_llm_available?: boolean;
+            /**
+             * Use Personal Openrouter Key
+             * @default false
+             */
+            use_personal_openrouter_key?: boolean;
+            /**
+             * Personal Openrouter Key Active
+             * @default false
+             */
+            personal_openrouter_key_active?: boolean;
             /** Openrouter Key Set At */
             openrouter_key_set_at?: string | null;
             /** Openrouter Key Origin */
@@ -6755,6 +6765,8 @@ export interface components {
             salary_min_override?: number | null;
             /** Openrouter Api Key */
             openrouter_api_key?: string | null;
+            /** Use Personal Openrouter Key */
+            use_personal_openrouter_key?: boolean | null;
             /** Extension Confirmed */
             extension_confirmed?: boolean | null;
             telegram_prefs?: components["schemas"]["TelegramPrefs"] | null;

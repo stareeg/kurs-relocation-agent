@@ -6,6 +6,7 @@ import type { AppSettings } from "@/api/settings"
 import type { AuthStatus } from "@/api/auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ChipToggleGroup } from "@/components/ui/chip-toggle-group"
 import { ErrorState } from "@/components/ui/empty-state"
 import { HelpTip } from "@/components/ui/help-tip"
 import { Input } from "@/components/ui/input"
@@ -27,6 +28,7 @@ import {
   useAppSettings,
   useRequestOpenRouterKey,
   useSaveOpenRouterKey,
+  useSetPersonalKeyUse,
   useTokenStats,
 } from "./use-settings"
 import { hasOpenRouterKey, openRouterKeyView } from "./openrouter-key-state"
@@ -177,6 +179,13 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
 
   const view = openRouterKeyView(initial)
   const hasKey = hasOpenRouterKey(view)
+  const setPersonalUse = useSetPersonalKeyUse()
+  const serverAvailable = Boolean(initial.server_llm_available)
+  const keyConfigured = Boolean(initial.openrouter_key_configured)
+  // Тумблер имеет смысл только на стенде с серверной моделью и только если ключ есть:
+  // переключать «мой ключ / модель курса» без ключа не на что.
+  const canTogglePersonal = serverAvailable && keyConfigured
+  const personalActive = Boolean(initial.personal_openrouter_key_active)
   const [openrouterKey, setOpenrouterKey] = useState("")
   const [showKeyHelp, setShowKeyHelp] = useState(!hasKey)
   // Ключ от администратора: поле «свой ключ» спрятано за раскрытием — по умолчанию человеку
@@ -433,7 +442,9 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                   </p>
                   <p className="mt-0.5 text-sm text-slate-500">
                     {view === "server"
-                      ? "Ключ не нужен — запросы идут на модель курса."
+                      ? keyConfigured
+                        ? "Ключ сохранён, но выключен — запросы идут на модель курса."
+                        : "Ключ не нужен — запросы идут на модель курса."
                       : initial.openrouter_key_set_at
                         ? `${view === "managed" ? "Выдан" : "Вставлен"} ${formatDateTime(initial.openrouter_key_set_at)}`
                         : "Дата неизвестна"}
@@ -456,13 +467,40 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 </Button>
               )}
             </div>
+            {canTogglePersonal && (
+              <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-700">Использовать мой ключ OpenRouter</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {personalActive
+                      ? "Запросы идут с вашим ключом, расход — на ваш счёт OpenRouter."
+                      : "Выключено: запросы идут на модель курса, ваш ключ ждёт."}
+                  </p>
+                </div>
+                <ChipToggleGroup
+                  size="sm"
+                  multiple={false}
+                  allowEmpty={false}
+                  options={[
+                    { value: "off", label: "Модель курса" },
+                    { value: "on", label: "Мой ключ" },
+                  ]}
+                  value={[personalActive ? "on" : "off"]}
+                  onChange={([value]) => {
+                    const on = value === "on"
+                    if (on === personalActive || setPersonalUse.isPending) return
+                    setPersonalUse.mutate(on)
+                  }}
+                />
+              </div>
+            )}
             <UsageStats
               todayBasic={tokenStats?.todayBasic}
               todayAdvanced={tokenStats?.todayAdvanced}
               monthBasic={tokenStats?.monthBasic}
               monthAdvanced={tokenStats?.monthAdvanced}
             />
-            {view !== "own" && (
+            {view !== "own" && !canTogglePersonal && (
               <div className="border-t border-slate-100 pt-4">
                 <button
                   type="button"

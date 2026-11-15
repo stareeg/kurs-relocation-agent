@@ -40,6 +40,7 @@ from core.config import (
     CoreSettings,
     current_account_id,
     current_account_openrouter_key,
+    current_account_use_personal_key,
     get_settings,
     normalize_openrouter_model,
     runtime_openrouter_key,
@@ -1225,7 +1226,13 @@ def get_chat_model(
     account_key = current_account_openrouter_key() if account_scoped else ""
     server_base = str(getattr(settings, "server_llm_base_url", "") or "").strip()
     server_key = str(getattr(settings, "server_llm_api_key", "") or "").strip()
-    server_mode = bool(server_base and server_key) and not account_key
+    server_configured = bool(server_base and server_key)
+    # Личный ключ аккаунта работает, только если человек явно включил тумблер (A-0). Без
+    # серверного провайдера тумблера нет — там свой ключ единственный путь (friend-install).
+    use_personal_key = bool(account_key) and (
+        not server_configured or current_account_use_personal_key()
+    )
+    server_mode = server_configured and not use_personal_key
     api_style: Literal["openrouter", "openai"] = "openai" if server_mode else "openrouter"
 
     if server_mode:

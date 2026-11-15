@@ -42,7 +42,7 @@ SCREENING_PITCH_FEAT = register(
         max_tokens=4096,
         budget_ms=90_000,
         retries=1,
-        reasoning_effort="medium",  # L-14
+        reasoning_effort="low",  # P0-4: текст/список, не вердикт
     )
 )
 SCREENING_QUESTIONS_FEAT = register(
@@ -55,7 +55,7 @@ SCREENING_QUESTIONS_FEAT = register(
         max_tokens=6144,  # smoke: peak ~3.3k на часть; запас под длинные JD + repair
         budget_ms=90_000,
         retries=1,
-        reasoning_effort="medium",  # L-14
+        reasoning_effort="low",  # P0-4: текст/список, не вердикт
     )
 )
 PREP = register(
@@ -68,7 +68,7 @@ PREP = register(
         max_tokens=6144,
         budget_ms=120_000,
         retries=1,
-        reasoning_effort="medium",  # L-14: дорогая генерация вопросов
+        reasoning_effort="low",  # P0-4: генерация списка вопросов, не анализ
         # schema generate_prep_questions — на call-site (_PrepQuestionsOut), L-12;
         # фича ещё зовёт complete для тем/чата (разные формы ответа).
     )
@@ -81,7 +81,7 @@ PREP_PACK = register(
         max_tokens=6144,
         budget_ms=120_000,
         retries=1,
-        reasoning_effort="medium",  # L-14
+        reasoning_effort="low",  # P0-4: текст/список, не вердикт
         prompt_in_code=True,
         cache_prefix=True,  # L-11
     )
@@ -95,7 +95,7 @@ DEBRIEF = register(
         # Согласовано с analyze_debrief(_LLM_TIMEOUT_S=150): раньше budget 35с резал живой разбор.
         budget_ms=150_000,
         retries=1,
-        reasoning_effort="medium",  # L-14
+        reasoning_effort="high",  # P0-4: разбор интервью → выводы
         prompt_in_code=True,
         cache_prefix=True,  # L-11: резюме+рубрика статичны между разборами
     )

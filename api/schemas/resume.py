@@ -245,6 +245,10 @@ class AppSettingsResponse(BaseModel):
     # A-0: серверный провайдер модели настроен — аккаунт работает без своего ключа.
     # Ключ сервера в ответе не появляется ни в каком виде.
     server_llm_available: bool = False
+    # A-0, тумблер «использовать мой ключ»: сохранённый выбор и фактический режим.
+    # `personal_key_active` — правда ли запросы сейчас идут с ключом человека.
+    use_personal_openrouter_key: bool = False
+    personal_openrouter_key_active: bool = False
     # Когда ключ OpenRouter был сохранён/обновлён последний раз — для подписи «дата вставки
     # токена» в блоке OpenRouter на «Аккаунте». Ключа нет → None.
     openrouter_key_set_at: datetime | None = None
@@ -282,6 +286,8 @@ class AppSettingsUpdate(BaseModel):
     company_adjustments: list[CompanyAdjustment] | None = None
     salary_min_override: int | None = Field(default=None, ge=0)
     openrouter_api_key: str | None = None
+    # A-0: переключение «свой ключ вместо модели курса». Включить без ключа нельзя (400).
+    use_personal_openrouter_key: bool | None = None
     extension_confirmed: bool | None = None
     telegram_prefs: TelegramPrefs | None = None
     auto_apply_config: AutoApplyConfig | None = None

@@ -18,13 +18,40 @@ describe("openRouterKeyView", () => {
     expect(hasOpenRouterKey(view)).toBe(true)
   })
 
-  it("свой ключ сильнее серверной модели", () => {
+  it("свой ключ на стенде работает только с включённым тумблером", () => {
     expect(
       openRouterKeyView(
         settings({
           openrouter_key_configured: true,
           openrouter_key_origin: "self",
           server_llm_available: true,
+          use_personal_openrouter_key: true,
+          personal_openrouter_key_active: true,
+        }),
+      ),
+    ).toBe("own")
+  })
+
+  it("ключ есть, но тумблер выключен — это модель курса", () => {
+    expect(
+      openRouterKeyView(
+        settings({
+          openrouter_key_configured: true,
+          openrouter_key_origin: "self",
+          server_llm_available: true,
+          personal_openrouter_key_active: false,
+        }),
+      ),
+    ).toBe("server")
+  })
+
+  it("без серверного провайдера свой ключ работает без тумблера", () => {
+    expect(
+      openRouterKeyView(
+        settings({
+          openrouter_key_configured: true,
+          openrouter_key_origin: "self",
+          server_llm_available: false,
         }),
       ),
     ).toBe("own")
