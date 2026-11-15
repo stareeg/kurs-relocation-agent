@@ -24,6 +24,16 @@ $compose run --rm -T api uv run --no-sync python -m core.platform.db.migrate
 # когда токен в .env непустой.
 token=$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2- | tr -d ' "' || true)
 services="postgres api frontend caddy"
+# A-0: серверный провайдер (LiteLLM) поднимаем только когда он настроен. Иначе
+# `--remove-orphans` ниже снёс бы контейнер как сироту, а API остался бы с адресом
+# прокси модели и без модели вовсе.
+if grep -qE '^SERVER_LLM_BASE_URL=.+' .env; then
+  services="$services litellm"
+else
+  echo "deploy: SERVER_LLM_BASE_URL пуст, LiteLLM не поднимаю"
+  $compose stop litellm || true
+  $compose rm -f litellm || true
+fi
 if [ -n "$token" ]; then
   services="$services bot"
 else
