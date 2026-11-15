@@ -20,10 +20,11 @@ services:
     envVars:
       - key: OPENROUTER_ORIGIN
         value: https://openrouter.ai
-      # Служебный токен для стенда: Render сгенерирует значение, его нужно скопировать в
-      # OPENROUTER_API_KEY стенда (см. README релея).
+      # Служебный токен для стенда — тот же, что уже стоит в OPENROUTER_API_KEY стенда
+      # (значение в secrets/render_relay_token.md). Не генерируем: иначе на стенде и релее
+      # окажутся разные токены и reserve молча получит 401.
       - key: RELAY_TOKEN
-        generateValue: true
+        sync: false
       # Настоящий ключ OpenRouter курса — только в дашборде Render.
       - key: OPENROUTER_API_KEY
         sync: false
