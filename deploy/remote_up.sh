@@ -20,7 +20,18 @@ $compose build
 $compose run --rm -T api uv run --no-sync python -m core.platform.db.migrate
 # --force-recreate: иначе после build контейнеры могут остаться на старом image id
 # (compose up -d молча no-op, /health зелёный — ложное DEPLOY_OK).
-$compose up -d --force-recreate --remove-orphans
+# Бот без TELEGRAM_BOT_TOKEN падает на старте и крутит рестарты. Поднимаем его только
+# когда токен в .env непустой.
+token=$(grep -E '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2- | tr -d ' "' || true)
+services="postgres api frontend caddy"
+if [ -n "$token" ]; then
+  services="$services bot"
+else
+  echo "deploy: TELEGRAM_BOT_TOKEN пуст, бот не поднимаю"
+  $compose stop bot || true
+  $compose rm -f bot || true
+fi
+$compose up -d --force-recreate --remove-orphans $services
 
 ok=""
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do

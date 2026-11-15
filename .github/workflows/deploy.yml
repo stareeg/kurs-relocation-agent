@@ -1,30 +1,25 @@
 name: Deploy
 
-# Push в main → раскатка на ВМ без ручного SSH. Триггерится через workflow_run на CI, а не
-# push напрямую — иначе красный CI не помешал бы деплою (push и workflow_run — независимые
-# события, ci.yml сам ничего не блокирует).
+# Сборка образов на ВМ: workflow только заходит по SSH и запускает deploy/remote_up.sh
+# (git fetch main → docker compose build → migrate → up). В Actions образы не собираются
+# и в реестр не пушатся.
 #
-# Секреты (Settings → Secrets and variables → Actions), заводятся один раз на ВМ:
-#   DEPLOY_HOST     — IP или домен ВМ
-#   DEPLOY_USER     — non-root deploy-пользователь, напр. "deploy"
-#   DEPLOY_SSH_KEY  — приватный ключ этого пользователя (публичный уже в его authorized_keys)
+# Запуск только вручную, когда на main уже накопились коммиты и стенд пора обновить.
+# На каждый push не вешаемся: репозиторий публичный, минуты раннеров бесплатные, но
+# сборка на ВМ долгая и на 4 ГБ её не стоит гонять часто.
+# Перед SSH проверяем, что последний CI на main зелёный. Иначе красный main уехал бы на стенд.
+#
+# Секреты (Settings → Secrets and variables → Actions), один раз:
+#   DEPLOY_HOST     — IP ВМ
+#   DEPLOY_USER     — пользователь deploy
+#   DEPLOY_SSH_KEY  — приватный ключ только для этого пользователя
 #   DEPLOY_PORT     — опционально, порт sshd (дефолт 22)
-# Деплой-пользователь должен иметь read-доступ к репозиторию через свой собственный git remote
-# на ВМ (deploy-ключ GitHub или уже настроенный клон) — это настраивается один раз при
-# провижининге ВМ, не здесь.
+# Переменная DEPLOY_ENABLED=true включает кнопку. Без неё ручной запуск пропускается.
 #
-# Обход при инциденте Actions / zombie queued:
-#   gh run cancel <id>                  # снять зависший Deploy (если API жив)
-#   gh workflow run deploy.yml          # ручной Deploy (cancel-in-progress снимет предыдущий)
-#   .\deploy\deploy_prod.ps1            # полный обход Actions → SSH на ВМ (тот же remote_up.sh)
+# Обход, если Actions недоступны:
+#   .\deploy\deploy_prod.ps1            # тот же remote_up.sh по SSH
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
-  # Ручной запуск, когда CI зелёный, а workflow_run-событие потерялось
-  # (очередь Actions / zombie queued) — иначе деплой нечем дернуть без нового push.
   # `{}` обязателен: голый `workflow_dispatch:` даёт startup_failure без jobs.
   workflow_dispatch: {}
 
@@ -36,21 +31,26 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
-    # workflow_dispatch: github.event.workflow_run пуст → старый if всегда false → skipped.
-    # workflow_run: только зелёный CI на main (не деплоим красный / чужую ветку).
-    # Стенда пока нет: деплой включается в шаге D-1 переменной репозитория DEPLOY_ENABLED=true
-    # (Settings → Secrets and variables → Actions → Variables) вместе с секретами выше.
-    if: >
-      vars.DEPLOY_ENABLED == 'true'
-      && (github.event_name == 'workflow_dispatch'
-          || (github.event_name == 'workflow_run'
-              && github.event.workflow_run.conclusion == 'success'
-              && github.event.workflow_run.head_branch == 'main'))
+    # Кнопка молчит, пока переменная DEPLOY_ENABLED не включена.
+    if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Последний CI на main зелёный
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          conclusion=$(gh run list --workflow CI --branch main --limit 1 --json conclusion --jq '.[0].conclusion // "none"')
+          echo "Последний CI на main: $conclusion"
+          if [ "$conclusion" != "success" ]; then
+            echo "Деплой не запускаю: на main нет зелёного CI."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
