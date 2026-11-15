@@ -13,8 +13,60 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import ConfigDict, PrivateAttr
+
 from core.kernel import ports
 from core.kernel.vacancy import RawVacancy
+
+
+class ScriptedChatModel(BaseChatModel):
+    """Фейк чат-модели для графа агента (A-1): заготовленные сообщения по порядку.
+
+    Отвечает BaseMessage-ами из списка (последний повторяется), имена инструментов
+    из `bind_tools` копит в `seen_tools` — так тесты проверяют, какие инструменты
+    реально видит модель внутри deepagents. `ls_provider` рапортует «openrouter»,
+    чтобы профиль harness deepagents применялся в тестах так же, как в проде.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    responses: list[BaseMessage]
+    seen_tools: list[list[str]] = []
+    ls_provider_name: str = "openrouter"
+    _cursor: Any = PrivateAttr(default=0)
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> ScriptedChatModel:
+        names: list[str] = []
+        for tool in tools:
+            if isinstance(tool, dict):
+                names.append(str(tool.get("function", {}).get("name", "?")))
+            else:
+                names.append(str(getattr(tool, "name", "?")))
+        self.seen_tools.append(names)
+        return self
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted-chat"
+
+    def _get_ls_params(self, stop: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
+        return {"ls_provider": self.ls_provider_name, "ls_model_name": "scripted"}
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        _ = messages, stop, run_manager, kwargs
+        index = int(self._cursor)
+        message = self.responses[index if index < len(self.responses) else -1]
+        self._cursor = index + 1
+        return ChatResult(generations=[ChatGeneration(message=message)])
 
 
 class FakeVacancySource:
@@ -151,4 +203,11 @@ def use_fake_llm(monkeypatch, llm: FakeLlm) -> FakeLlm:
     return llm
 
 
-__all__ = ["FakeChannel", "FakeLlm", "FakeVacancySource", "RaisingLlm", "use_fake_llm"]
+__all__ = [
+    "FakeChannel",
+    "FakeLlm",
+    "FakeVacancySource",
+    "RaisingLlm",
+    "ScriptedChatModel",
+    "use_fake_llm",
+]

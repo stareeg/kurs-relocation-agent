@@ -22,7 +22,7 @@ from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import LanguageModelInput
+from langchain_core.language_models import LangSmithParams, LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -383,6 +383,25 @@ class OpenRouterChatModel(BaseChatModel):
     @property
     def _llm_type(self) -> str:
         return "openrouter-chat"
+
+    @property
+    def model_name(self) -> str:
+        """Имя primary-модели.
+
+        Конвенция чат-моделей langchain: поле `model_name` ждут трассировки и внешние
+        фреймворки (deepagents вытаскивает из него идентификатор модели для профиля
+        harness — A-1). У нашей модели имя живёт в `primary_model`, здесь только алиас.
+        """
+        return self.primary_model
+
+    def _get_ls_params(self, stop: list[str] | None = None, **kwargs: Any) -> LangSmithParams:
+        """Стабильные ls_provider/ls_model_name вместо дефолта из имени класса.
+
+        Дефолт базы выводит provider из имени класса (`openrouterchat`), что ломает
+        точность трасс LangSmith и подбор профиля deepagents. Явное «openrouter» —
+        как объявляет сам OpenRouter.
+        """
+        return {"ls_provider": "openrouter", "ls_model_name": self.primary_model}
 
     @property
     def usage_sink(self) -> UsageSink:
@@ -1094,12 +1113,15 @@ class _StructuredOutputRunnable(Runnable[LanguageModelInput, Any]):
 
     def __init__(
         self,
-        llm: OpenRouterChatModel,
+        llm: BaseChatModel,
         schema: type[BaseModel] | dict,
         *,
         include_raw: bool = False,
         max_retries: int = 1,
     ) -> None:
+        """`llm` — любая чат-модель с `bind(response_format=…)`: путь используется
+        и платформенными фичами (через `OpenRouterChatModel.with_structured_output`),
+        и узлами агента курса, которым модель подменяется в тестах (A-1)."""
         self._llm = llm
         self._schema = schema
         self._include_raw = include_raw

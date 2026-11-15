@@ -48,11 +48,17 @@ def _iter_python_sources(*packages: str) -> list[Path]:
 
 
 def test_ainvoke_and_structured_only_in_platform_llm():
-    """Проверка A-07: домены не зовут with_structured_output / ainvoke / astream напрямую."""
+    """Проверка A-07: домены не зовут with_structured_output / ainvoke / astream напрямую.
+
+    Исключения: `core/platform/llm/` — сам слой вызовов; `core/app/agent/` — каркас агента
+    (A-1, решения 15.11): граф langgraph и исполнитель deepagents зовут модели сами, бюджет
+    и пределы агент считает собственным колбэком (`core/app/agent/budget.py`), product-фичи
+    через `run()` туда не попадают.
+    """
     offenders: list[str] = []
     for path in _iter_python_sources("core", "bot_app", "api"):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("core/platform/llm/"):
+        if rel.startswith(("core/platform/llm/", "core/app/agent/")):
             continue
         src = path.read_text(encoding="utf-8")
         hits: list[str] = []
@@ -71,10 +77,16 @@ def test_ainvoke_and_structured_only_in_platform_llm():
 
 
 def test_chat_model_for_not_imported_outside_platform_llm():
+    """`chat_model_for` — только платформа и каркас агента.
+
+    Исключение `core/app/agent/` (A-1, решения 15.11): агент живёт вне `run()` —
+    он сам ведёт бюджет и пределы, модели собирает по декларациям реестра
+    (`core/app/agent/llm.py`), тир по-прежнему резолвится реестром.
+    """
     offenders: list[str] = []
     for path in _iter_python_sources("core", "bot_app", "api"):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("core/platform/llm/"):
+        if rel.startswith(("core/platform/llm/", "core/app/agent/")):
             continue
         src = path.read_text(encoding="utf-8")
         if re.search(

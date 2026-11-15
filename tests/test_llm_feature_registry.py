@@ -52,6 +52,11 @@ def _llm_agent_names_from_code() -> set[str]:
 
 def test_registry_covers_code_agents():
     ensure_features_loaded()
+    # Фичи агента курса живут в core/app/agent/llm.py (платформа не импортирует app,
+    # поэтому ensure_features_loaded их не тянет) — регистрируем явно, как в рантайме.
+    from core.app.agent.llm import ensure_agent_features_registered
+
+    ensure_agent_features_registered()
     registered = {f.name for f in all_features()}
     code_agents = _llm_agent_names_from_code()
     missing = sorted(code_agents - registered)

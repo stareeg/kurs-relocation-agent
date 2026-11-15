@@ -22,9 +22,17 @@ dependencies = [
     "h2>=4.1.0",
     "socksio>=1.0.0",
     "python-dotenv>=1.1.0",
-    "langchain-core>=1.5.5",
+    "langchain-core==1.6.4",
     "langsmith>=0.11.0",
     "asyncpg>=0.30.0",
+    # --- Агент курса (A-1): deepagents над LangGraph; версии как в COWORK (раздел 3.1 PLAN) ---
+    "langchain==1.4.2",
+    "langgraph==1.2.12",
+    "deepagents==0.7.13",
+    # Чекпойнты графа (A-3): стандартный AsyncPostgresSaver, он на psycopg v3
+    # (в продукте второй драйвер, отдельный от asyncpg — только для таблиц чекпойнтов).
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary]>=3.2",
     # YAML-конфиги (weights_spec и прочие).
     "pyyaml>=6.0",
     # PDF резюме (core/domains/profile/parse_pdf.py) + текстовые вложения (core/kernel/text/extract.py).
