@@ -197,9 +197,7 @@ async def clear_user_auto_apply_queue(account_id: int, *, actor_id: int) -> int:
     return cleared
 
 
-async def stop_user_discovery(
-    account_id: int, *, platform: str | None, actor_id: int
-) -> list[str]:
+async def stop_user_discovery(account_id: int, *, platform: str | None, actor_id: int) -> list[str]:
     """Оператор останавливает автопросмотр — одну площадку или все три."""
     if await get_account_by_id(account_id) is None:
         raise AdminError("Аккаунт не найден", status=404)

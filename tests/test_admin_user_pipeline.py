@@ -44,9 +44,7 @@ async def test_load_user_pipeline_assembles_per_platform(monkeypatch: pytest.Mon
     monkeypatch.setattr(svc, "_extension_discovery_tick_seconds", AsyncMock(return_value=60))
 
     aa_config = AutoApplyConfig(
-        hh=AutoApplyPlatformConfig(
-            enabled=True, min_score=70, manual_review_band=10, daily_cap=5
-        ),
+        hh=AutoApplyPlatformConfig(enabled=True, min_score=70, manual_review_band=10, daily_cap=5),
         getmatch=AutoApplyPlatformConfig(enabled=False),
     )
     d_config = DiscoveryConfig()
