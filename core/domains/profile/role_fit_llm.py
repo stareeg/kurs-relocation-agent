@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.gap import ResumeGapReport, load_top_scored_summaries
 from core.domains.profile.model import ResumeData
 from core.domains.profile.score_criteria import format_search_axes_block
@@ -75,7 +75,7 @@ async def resolve_role_fit_llm(
 ) -> tuple[int, list[str]] | None:
     """`(score, notes)` или `None` при отсутствии ключа / сбое (caller → эвристика)."""
     settings = get_settings()
-    if not settings.openrouter_api_key:
+    if not llm_available(settings=settings):
         return None
 
     try:

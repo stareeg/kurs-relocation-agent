@@ -43,6 +43,12 @@ services:
       resources:
         limits:
           memory: 1g
+    depends_on:
+      # Прокси модели может не подняться (пустой ключ, недоступный образ) — API должен
+      # стартовать всё равно, иначе стенд ложится из-за необязательного сервиса.
+      litellm:
+        condition: service_started
+        required: false
 
   frontend:
     restart: unless-stopped
@@ -62,6 +68,28 @@ services:
       resources:
         limits:
           memory: 512m
+
+  # A-0: серверный провайдер модели для аккаунтов без своего ключа OpenRouter.
+  # Портов наружу нет — только сеть Compose, вход по LITELLM_MASTER_KEY.
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.109.1
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      INFERENCE_BASE_URL: ${INFERENCE_BASE_URL:-}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      RESERVE_MODEL: ${RESERVE_MODEL:-openai/google/gemini-3.7-flash}
+    volumes:
+      - ../deploy/litellm/config.yaml:/app/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          # 4 ГБ на стенде: LiteLLM — прокси, но под нагрузкой держит ~600 МБ и в 768 МБ
+          # упирался; 900 МБ с запасом, свопа на ВМ 2 ГБ.
+          memory: 900m
 
   caddy:
     image: caddy:2-alpine

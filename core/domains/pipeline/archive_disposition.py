@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.kernel import ports
 from core.kernel.errors import LlmError
 from core.platform.db.pool import Executor
@@ -117,7 +117,7 @@ async def classify_archive_disposition(
             disposition="skipped",
             reasoning="нет переписки с HR — считаем пропуском",
         )
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return ArchiveDispositionResult(
             disposition="skipped",
             reasoning="LLM недоступен — дефолт пропуск",

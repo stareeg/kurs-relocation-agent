@@ -39,6 +39,7 @@ from api.security import (
     require_account_context,
     resolve_request_account,
 )
+from core.config import get_settings as get_core_settings
 from core.domains.profile import telegram_link as tg
 from core.domains.profile import web_auth
 from core.platform.observability import event
@@ -83,6 +84,7 @@ async def build_auth_status(
         authed=authed,
         auth_token_configured=await web_auth.any_web_auth_token_issued(),
         openrouter_key_configured=await is_openrouter_key_configured(account_id=account_id),
+        server_llm_available=get_core_settings().server_llm_available(),
         extension_confirmed=await is_extension_confirmed(account_id=account_id),
         bot_configured=bool(settings.telegram_bot_token.strip()),
         bot_username=(identity.username if identity else None) or fallback_username or None,

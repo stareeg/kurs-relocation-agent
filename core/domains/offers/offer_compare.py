@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.app.pipeline import Pipeline, PipelineError, Step
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.offers.models import (
     OfferComparison,
     OfferProsCons,
@@ -357,8 +357,8 @@ def _assemble_comparison(
 
 
 def _validate_offers(offers: list[OfferRecord]) -> list[OfferRecord]:
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     if len(offers) < 2:
         raise ValueError("Для сравнения нужно минимум 2 оффера")
     return offers[:6] if len(offers) > 6 else offers

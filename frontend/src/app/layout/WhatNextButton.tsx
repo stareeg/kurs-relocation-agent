@@ -8,11 +8,7 @@ import { useResumeGap } from "@/features/resume/use-resume"
 import { useActiveJobsCount } from "@/features/jobs/use-jobs"
 import { useActiveConversationsCount } from "@/features/chat/use-conversations"
 import { useOffers } from "@/features/offers/use-offers"
-import {
-  buildWhatNextGuidance,
-  type WhatNextContext,
-  type WhatNextGuidance,
-} from "@/lib/what-next"
+import { buildWhatNextGuidance, type WhatNextContext, type WhatNextGuidance } from "@/lib/what-next"
 
 const CLOSE_MS = 180
 /** Панель не должна висеть бесконечно, даже если курсор остался на кнопке. */
@@ -152,12 +148,7 @@ function WhatNextShell({
   }, [open, closeNow])
 
   return (
-    <div
-      ref={wrapRef}
-      className="relative min-w-0"
-      onMouseEnter={openNow}
-      onMouseLeave={closeSoon}
-    >
+    <div ref={wrapRef} className="relative min-w-0" onMouseEnter={openNow} onMouseLeave={closeSoon}>
       <button
         type="button"
         aria-label="Что делать?"
@@ -169,7 +160,9 @@ function WhatNextShell({
         )}
       >
         <CircleHelp className="size-4 shrink-0" strokeWidth={2} />
-        {!collapsed && <span className="min-w-0 flex-1 truncate text-left text-sm">Что делать?</span>}
+        {!collapsed && (
+          <span className="min-w-0 flex-1 truncate text-left text-sm">Что делать?</span>
+        )}
       </button>
       {open
         ? createPortal(
@@ -208,7 +201,9 @@ function useWhatNextContext(): WhatNextContext {
   return useMemo(
     () => ({
       pathname: location.pathname,
-      hasOpenRouterKey: Boolean(appSettings?.openrouter_key_configured),
+      hasOpenRouterKey: Boolean(
+        appSettings?.openrouter_key_configured || appSettings?.server_llm_available,
+      ),
       resumeReady: (resumeGap?.score?.total ?? 0) >= 40,
       activeJobsCount: activeCountData?.count ?? 0,
       activeChatsCount: activeChatsData?.count ?? 0,
@@ -217,6 +212,7 @@ function useWhatNextContext(): WhatNextContext {
     [
       location.pathname,
       appSettings?.openrouter_key_configured,
+      appSettings?.server_llm_available,
       resumeGap?.score?.total,
       activeCountData?.count,
       activeChatsData?.count,

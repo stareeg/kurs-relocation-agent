@@ -1,0 +1,39 @@
+# LiteLLM — единственный вход приложения к моделям курса (A-0).
+#
+# Приложение ходит сюда как в обычный OpenAI-совместимый API одним серверным ключом;
+# о существовании инференс-ВМ и OpenRouter оно не знает. Ключи и адреса — только из
+# окружения стенда (.env на ВМ), в этом файле секретов нет.
+#
+# Маршруты:
+# - `glm-5.3-flash` — наша ВМ 2 × H100 через SSH-туннель стенда (secrets/inference_tunnel.md);
+# - `openrouter-reserve` — запасной OpenRouter через релей (с Selectel прямой адрес даёт 403);
+#   пока релея нет, вызов этого алиаса честно падает, основной маршрут работает.
+#
+# Цепочку деградации держит LiteLLM: при недоступности ВМ запрос уходит на запасной алиас.
+
+model_list:
+  - model_name: glm-5.3-flash
+    litellm_params:
+      model: openai/glm-5.3-flash
+      api_base: os.environ/INFERENCE_BASE_URL
+      api_key: os.environ/INFERENCE_API_KEY
+      timeout: 300
+
+  - model_name: openrouter-reserve
+    litellm_params:
+      model: os.environ/RESERVE_MODEL
+      api_base: os.environ/OPENROUTER_BASE_URL
+      api_key: os.environ/OPENROUTER_API_KEY
+      timeout: 120
+
+litellm_settings:
+  # llama.cpp не понимает часть OpenAI-полей — лишнее выкидываем, а не роняем запрос 400.
+  drop_params: true
+  num_retries: 1
+  request_timeout: 300
+
+router_settings:
+  fallbacks: [{glm-5.3-flash: [openrouter-reserve]}]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

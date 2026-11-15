@@ -20,7 +20,7 @@ from core.platform.config.app import AppSettings
 from core.platform.config.base import SETTINGS_CONFIG, strip_blank_numeric_env
 from core.platform.config.db import DbSettings
 from core.platform.config.integrations import IntegrationSettings
-from core.platform.config.llm import LlmSettings
+from core.platform.config.llm import LlmSettings, ServerLlmSettings
 from core.platform.config.runtime import apply_runtime_to
 from core.platform.config.secrets import format_validation_error
 
@@ -29,6 +29,7 @@ class CoreSettings(
     BaseSettings,
     DbSettings,
     LlmSettings,
+    ServerLlmSettings,
     AppSettings,
     IntegrationSettings,
 ):

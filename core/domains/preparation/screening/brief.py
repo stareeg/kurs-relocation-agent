@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.preparation.llm import SCREENING_JD_BRIEF
 from core.domains.preparation.screening.parse import strip_fence
 from core.domains.preparation.vacancy_context import truncate_vacancy_text
@@ -141,8 +141,8 @@ async def build_jd_brief(
     """Текст вакансии → разбор (что просят, чего не сказано); мягко деградирует на битом JSON,
     см. `parse_jd_brief`. `score_summary` здесь не используется (разбор - только про вакансию),
     параметр держим ради единой сигнатуры с сёстрами-генераторами из `pack.py` (шаг 8)."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     if not (vacancy_text or "").strip() and not (title or "").strip():
         return JdBrief()
 

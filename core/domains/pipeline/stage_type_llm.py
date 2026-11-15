@@ -12,7 +12,7 @@ import json
 import logging
 import re
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.preparation.models import InterviewStageType
 from core.kernel import ports
 from core.kernel.errors import LlmError
@@ -100,7 +100,7 @@ async def resolve_stage_type_llm(
     `vacancy_id` — только для лога (§15 плана `local_context_blind_spots_2026_08_12.md`):
     без него reasoning классификатора нигде не попадал в `copilot_logs`/бандл поддержки.
     """
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return None
 
     content = ""

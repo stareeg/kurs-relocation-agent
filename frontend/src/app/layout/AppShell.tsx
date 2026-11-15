@@ -107,12 +107,7 @@ function navItemClass({ isActive, collapsed }: { isActive: boolean; collapsed: b
  * до роутера не доходит (URL не меняется). pointerdown на самой ссылке срабатывает раньше
  * DismissableLayer и раньше, чем click глушат. Cmd/Ctrl-клик не трогаем — новая вкладка.
  */
-function SidebarNavLink({
-  to,
-  onClick,
-  children,
-  ...rest
-}: ComponentProps<typeof NavLink>) {
+function SidebarNavLink({ to, onClick, children, ...rest }: ComponentProps<typeof NavLink>) {
   const navigate = useNavigate()
   const from = useLocation().pathname
   const dest = typeof to === "string" ? to : String(to)
@@ -121,7 +116,13 @@ function SidebarNavLink({
       to={to}
       {...rest}
       onPointerDown={(event) => {
-        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
           return
         }
         captureNavClick(from, dest)
@@ -442,7 +443,9 @@ function GatedShell({ authStatus }: { authStatus: AuthStatus | undefined }) {
         <>
           <WhatNextButtonGated
             collapsed={navCollapsed}
-            hasOpenRouterKey={Boolean(authStatus?.openrouter_key_configured)}
+            hasOpenRouterKey={Boolean(
+              authStatus?.openrouter_key_configured || authStatus?.server_llm_available,
+            )}
           />
           <DisabledNavItem label="Автоотклики" icon={Puzzle} collapsed={navCollapsed} />
           <SidebarNavLink
@@ -509,7 +512,7 @@ function FullShell({ isAdmin }: { isAdmin: boolean }) {
   const { shouldShow, dismissHint } = useOnboardingHints()
   const { data: appSettings } = useAppSettings()
   const showResumeNextHint =
-    Boolean(appSettings?.openrouter_key_configured) &&
+    Boolean(appSettings?.openrouter_key_configured || appSettings?.server_llm_available) &&
     shouldShow(ONBOARDING_HINT_IDS.settingsAfterKeyResume)
   const navHelpSide = navCollapsed ? "right" : "bottom"
   const navHelpAlign = navCollapsed ? "center" : "start"
@@ -635,5 +638,9 @@ export function AppShell() {
   // Гейт (AUTH-1): anon или незавершённый онбординг → серое меню, только «Параметры».
   // Пока статус не загружен (data undefined), считаем гейт открытым — не мигать серым зря.
   const gated = status === "anon" || (authStatus ? !isGateOpen(authStatus) : false)
-  return gated ? <GatedShell authStatus={authStatus} /> : <FullShell isAdmin={Boolean(authStatus?.is_admin)} />
+  return gated ? (
+    <GatedShell authStatus={authStatus} />
+  ) : (
+    <FullShell isAdmin={Boolean(authStatus?.is_admin)} />
+  )
 }

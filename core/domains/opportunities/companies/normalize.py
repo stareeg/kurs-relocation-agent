@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.llm import COMPANY_NORMALIZE
 from core.kernel import ports
 from core.kernel.errors import LlmError
@@ -219,7 +219,7 @@ def _load_prompt() -> str:
 
 async def _extract_brand_llm(raw: str) -> str | None:
     """Одноразовый extract-тир: выделить бренд. None при сбое/пустом ответе."""
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return None
     try:
         system = _load_prompt()

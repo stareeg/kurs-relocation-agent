@@ -52,7 +52,10 @@ export function useAppSettings() {
     queryKey: KEY,
     queryFn: fetchAppSettings,
     staleTime: 60_000,
-    refetchInterval: (query) => (query.state.data?.openrouter_key_configured ? false : 20_000),
+    refetchInterval: (query) =>
+      query.state.data?.openrouter_key_configured || query.state.data?.server_llm_available
+        ? false
+        : 20_000,
   })
 }
 

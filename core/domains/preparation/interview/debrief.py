@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import (
     load_candidate_identity,
     load_instructions,
@@ -755,8 +755,8 @@ async def analyze_debrief(
     `prior_context` — сжатый разбор предыдущих этапов по этой вакансии (вопросы/слабые темы/сигнал),
     чтобы анализ следующего этапа учитывал, что уже было и чего ждать дальше.
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     # scenarios.debrief уже вырезал служебку sobes.tech через clean_transcript → extract_sobes_transcript.
     # Повторный вызов здесь давал дубль лога «sobes.tech export» и не находил маркер во второй раз
     # (текст уже чистый) — но на ручных путях (tests, bot_app) transcripts приходят сырыми, поэтому

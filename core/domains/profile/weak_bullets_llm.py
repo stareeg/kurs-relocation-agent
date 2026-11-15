@@ -15,7 +15,7 @@ import json
 import logging
 import re
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.gap import WeakBullet
 from core.domains.profile.model import ResumeData
 from core.domains.profile.score_tips import normalize_score_tip
@@ -97,7 +97,7 @@ async def resolve_weak_bullets_llm(
     """
     if not bullets:
         return []
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return None
 
     numbered = "\n".join(

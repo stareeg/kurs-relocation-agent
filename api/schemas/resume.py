@@ -242,6 +242,9 @@ class AppSettingsResponse(BaseModel):
     company_adjustments: list[CompanyAdjustment]
     salary_min_override: int | None = None
     openrouter_key_configured: bool = False
+    # A-0: серверный провайдер модели настроен — аккаунт работает без своего ключа.
+    # Ключ сервера в ответе не появляется ни в каком виде.
+    server_llm_available: bool = False
     # Когда ключ OpenRouter был сохранён/обновлён последний раз — для подписи «дата вставки
     # токена» в блоке OpenRouter на «Аккаунте». Ключа нет → None.
     openrouter_key_set_at: datetime | None = None

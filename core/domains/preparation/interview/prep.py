@@ -17,7 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from core.app.pipeline import Pipeline, PipelineError, Step
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import (
     CANDIDATE_IDENTITY_TOKEN,
     load_candidate_identity,
@@ -569,8 +569,8 @@ async def generate_prep_questions(
     *,
     account_id: int,
 ) -> list[PrepQuestion]:
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     context = await gather_prep_context(record.vacancy_id or "", stage, account_id=account_id)
     pipeline = await _prep_pipeline(
@@ -614,8 +614,8 @@ async def generate_prep_questions_events(
     account_id: int,
 ) -> AsyncIterator[dict[str, Any]]:
     """Тот же расчёт, но части (`answers`/`ask_them`) отдаются по мере готовности."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     context = await gather_prep_context(record.vacancy_id or "", stage, account_id=account_id)
     pipeline = await _prep_pipeline(
@@ -924,8 +924,8 @@ async def generate_vacancy_prep_topics(
     stage: str,
 ) -> list[str]:
     """LLM: темы, которые могут спросить по вакансии на этапе — для «Готовность по темам»."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     system = _load_prompt_file(_PREP_TOPICS_PROMPT)
     stage_label = STAGE_LABELS.get(stage, stage)
     title = record.title or "?"
@@ -970,8 +970,8 @@ async def expand_prep_topic(
     П.5c: stateless-раскрытие темы из разбора реального собеса по клику в блоке «Темы».
     Basic-tier (GPT-5.6 Luna) — дёшево и быстро; кэшируется через общий llm_result_cache.
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     topic = (topic or "").strip()
     if not topic:
         raise ValueError("Не передана тема для раскрытия")
@@ -1044,7 +1044,7 @@ async def map_question_to_prep_topics(
     q = (question_text or "").strip()
     if not q:
         return []
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         # Без ключа - мягкая деградация: ярлык пачки, если он в каталоге, иначе пусто.
         return []
 
@@ -1098,8 +1098,8 @@ async def parse_external_prep_chat(
     existing_questions: list[PrepQuestion] | None = None,
 ) -> ChatAnswer:
     """Парсинг внешней переписки с LLM → пачка вопросов с укороченными ответами."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     system = _load_prompt_file(_PARSE_EXTERNAL_PROMPT)
     existing = existing_questions or []
     already = "\n".join(f"- {q.text}" for q in existing[:80]) or "(пока пусто)"
@@ -1185,8 +1185,8 @@ async def answer_prep_chat(
     (`analysis.title`/`.text`, обёрнутый `wrap_untrusted`) — эта функция сама вложений не
     читает, склейка происходит на роутере (`api.routers.preparation.mappers.prep_chat_llm_history`),
     домен здесь просто конкатенирует `content` как обычный текст реплики."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     context = await gather_prep_context(record.vacancy_id or "", stage, account_id=account_id)
     system = await _build_prep_chat_system(
@@ -1346,8 +1346,8 @@ async def build_sobes_context(
     туда часто попадают огромные внешние переписки и раздувают шум.
     """
     del chat_history  # явно не используем
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     context = await gather_prep_context(record.vacancy_id or "", stage, account_id=account_id)
     user = _build_sobes_user(

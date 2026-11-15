@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.kernel import ports
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ async def classify_hr_directions_llm(
     unresolved_idx = {m.index for m in messages if m.kind is None}
     if not unresolved_idx:
         return {}
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return {}
 
     from core.domains.opportunities.prompt import load_candidate_identity

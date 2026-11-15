@@ -12,17 +12,35 @@ function settings(patch: Partial<AppSettings>): AppSettings {
 }
 
 describe("openRouterKeyView", () => {
+  it("ключа нет, но серверная модель настроена — доступ уже есть, ключ не нужен", () => {
+    const view = openRouterKeyView(settings({ server_llm_available: true }))
+    expect(view).toBe("server")
+    expect(hasOpenRouterKey(view)).toBe(true)
+  })
+
+  it("свой ключ сильнее серверной модели", () => {
+    expect(
+      openRouterKeyView(
+        settings({
+          openrouter_key_configured: true,
+          openrouter_key_origin: "self",
+          server_llm_available: true,
+        }),
+      ),
+    ).toBe("own")
+  })
+
   it("ключа нет и заявок не было — просим ключ", () => {
     expect(openRouterKeyView(settings({}))).toBe("missing")
   })
 
   it("заявка в работе — кнопка запроса блокируется", () => {
-    expect(
-      openRouterKeyView(settings({ openrouter_key_request_status: "pending" })),
-    ).toBe("requested")
-    expect(
-      openRouterKeyView(settings({ openrouter_key_request_status: "approved" })),
-    ).toBe("requested")
+    expect(openRouterKeyView(settings({ openrouter_key_request_status: "pending" }))).toBe(
+      "requested",
+    )
+    expect(openRouterKeyView(settings({ openrouter_key_request_status: "approved" }))).toBe(
+      "requested",
+    )
   })
 
   it("по заявке отказали — состояние отдельное от «заявок не было»", () => {
@@ -68,6 +86,7 @@ describe("hasOpenRouterKey", () => {
   it("гейт открыт только когда ключ реально есть", () => {
     expect(hasOpenRouterKey("own")).toBe(true)
     expect(hasOpenRouterKey("managed")).toBe(true)
+    expect(hasOpenRouterKey("server")).toBe(true)
     expect(hasOpenRouterKey("requested")).toBe(false)
     expect(hasOpenRouterKey("rejected")).toBe(false)
     expect(hasOpenRouterKey("missing")).toBe(false)

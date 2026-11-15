@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.bullet_format import parse_bullets
 from core.domains.profile.gap import ResumeGapReport, ScoreFixItem, WeakBullet, count_bullets
 from core.domains.profile.model import ResumeData
@@ -180,7 +180,7 @@ async def resolve_score_audit_llm(
     db: object | None = None,
 ) -> tuple[int, int, list[ScoreFixItem]] | None:
     """`(writing_score, role_fit_primary, fixes)` или None при сбое."""
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         return None
     if count_bullets(data) == 0 and not (data.about or "").strip():
         return None

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.model import ResumeData, SearchCriteria
 from core.domains.profile.search_profile_suggest import (
     EXPERIENCE_INDUSTRY_OPTIONS,
@@ -223,8 +223,8 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
 async def parse_resume_pdf(pdf_bytes: bytes) -> ResumeData:
     """PDF → ResumeData через extract-тир и structured output."""
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     text = await asyncio.to_thread(extract_pdf_text, pdf_bytes)
     from core.domains.profile.llm import PARSE_PDF

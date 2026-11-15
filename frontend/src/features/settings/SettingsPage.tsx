@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "react-router-dom"
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  KeyRound,
-  Loader2,
-  Settings,
-} from "lucide-react"
+import { Check, ChevronDown, ChevronUp, KeyRound, Loader2, Settings } from "lucide-react"
 import type { AppSettings } from "@/api/settings"
 import type { AuthStatus } from "@/api/auth"
 import { Badge } from "@/components/ui/badge"
@@ -203,10 +196,13 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
   // Ключ мог приехать не от нас, а от администратора (опрос в useAppSettings). Гейт разделов
   // читает свой `/auth/status` — без этой инвалидации бейдж уже зелёный, а меню ещё закрыто.
   useEffect(() => {
-    if (hasKey && !authStatus?.openrouter_key_configured) {
+    const gateOpen = Boolean(
+      authStatus?.openrouter_key_configured || authStatus?.server_llm_available,
+    )
+    if (hasKey && !gateOpen) {
       void qc.invalidateQueries({ queryKey: AUTH_STATUS_KEY })
     }
-  }, [hasKey, authStatus?.openrouter_key_configured, qc])
+  }, [hasKey, authStatus?.openrouter_key_configured, authStatus?.server_llm_available, qc])
 
   // Автосейв при вставке/вводе ключа корректного вида — без кнопки «Сохранить».
   // lastAutoSaved ставим только после успеха: иначе таймаут/обрыв блокирует повтор
@@ -374,9 +370,11 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
       ? "Ключ от администратора"
       : view === "own"
         ? "Ключ настроен"
-        : view === "requested"
-          ? "Заявка в работе"
-          : "Ключ не задан"
+        : view === "server"
+          ? "Модель курса доступна"
+          : view === "requested"
+            ? "Заявка в работе"
+            : "Ключ не задан"
 
   return (
     <div className="space-y-4">
@@ -402,7 +400,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
       )}
 
       <SettingsSection
-        title="OpenRouter"
+        title={view === "server" ? "Модель" : "OpenRouter"}
         highlight={needsSetup}
         action={
           <Badge
@@ -427,12 +425,18 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-900">
-                    {view === "managed" ? "Ключ выдан администратором" : "Ключ принят"}
+                    {view === "managed"
+                      ? "Ключ выдан администратором"
+                      : view === "server"
+                        ? "Модель выдаётся сервером"
+                        : "Ключ принят"}
                   </p>
                   <p className="mt-0.5 text-sm text-slate-500">
-                    {initial.openrouter_key_set_at
-                      ? `${view === "managed" ? "Выдан" : "Вставлен"} ${formatDateTime(initial.openrouter_key_set_at)}`
-                      : "Дата неизвестна"}
+                    {view === "server"
+                      ? "Ключ не нужен — запросы идут на модель курса."
+                      : initial.openrouter_key_set_at
+                        ? `${view === "managed" ? "Выдан" : "Вставлен"} ${formatDateTime(initial.openrouter_key_set_at)}`
+                        : "Дата неизвестна"}
                   </p>
                 </div>
               </div>
@@ -458,7 +462,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
               monthBasic={tokenStats?.monthBasic}
               monthAdvanced={tokenStats?.monthAdvanced}
             />
-            {view === "managed" && (
+            {view !== "own" && (
               <div className="border-t border-slate-100 pt-4">
                 <button
                   type="button"
@@ -475,7 +479,9 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
                 {showOwnKeyField && (
                   <div className="mt-3 space-y-3">
                     <p className="text-sm text-slate-500">
-                      Свой ключ заменит выданный — расход пойдёт на ваш счёт OpenRouter.
+                      {view === "server"
+                        ? "Свой ключ OpenRouter нужен только для тестов — расход пойдёт на ваш счёт."
+                        : "Свой ключ заменит выданный — расход пойдёт на ваш счёт OpenRouter."}
                     </p>
                     {keyField}
                   </div>

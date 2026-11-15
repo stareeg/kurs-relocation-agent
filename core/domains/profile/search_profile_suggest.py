@@ -15,7 +15,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.model import ResumeData
 from core.domains.profile.structured_store import read_resume_data_for_account
 from core.kernel import ports
@@ -231,8 +231,8 @@ async def suggest_search_profile(
 ) -> SearchProfileSuggestion:
     """Слайт профиля поиска аккаунта запроса. Нет ключа → LlmError; пустое резюме → ValueError."""
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     data = await read_resume_data_for_account(account_id)
     context = _resume_context(data)

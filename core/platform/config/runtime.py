@@ -162,7 +162,29 @@ def apply_runtime_to(settings: CoreSettings) -> CoreSettings:
     return settings
 
 
+def llm_available(*, settings: CoreSettings | None = None) -> bool:
+    """Есть ли путь к модели — один вопрос вместо «задан ли ключ OpenRouter».
+
+    До A-0 домены спрашивали `settings.openrouter_api_key` и при пустом ключе молча уходили в
+    заглушку. Теперь путей три, и любой из них достаточен:
+
+    - свой ключ OpenRouter аккаунта текущего запроса (per-request контекст);
+    - ключ процесса/.env (фон, скрипты, первая настройка установки);
+    - серверный провайдер стенда (A-0) — тогда ключа у человека может не быть вовсе.
+    """
+    from core.platform.config.settings import get_settings
+
+    cfg = settings or get_settings()
+    server_available = getattr(cfg, "server_llm_available", None)
+    if callable(server_available) and server_available():
+        return True
+    return bool(
+        current_account_openrouter_key() or cfg.openrouter_api_key or runtime_openrouter_key()
+    )
+
+
 __all__ = [
+    "llm_available",
     "account_openrouter_key_cache_stale",
     "apply_runtime_to",
     "cache_account_openrouter_key",

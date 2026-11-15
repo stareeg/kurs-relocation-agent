@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.context import StrengthenContext, gather_bio_material
 from core.domains.profile.gap import load_top_scored_jobs
 from core.domains.profile.model import ResumeData
@@ -394,8 +394,8 @@ async def strengthen_experience_block(
     воронки), чтобы LLM понимала запрос рынка, но промпт не раздувался.
     """
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     data = await read_resume_data_for_account(account_id, db=db)
     experience = list(data.experience or [])
@@ -426,8 +426,8 @@ async def strengthen_about_block(
 ) -> AtsFitAboutPatch:
     """Усилить блок «Обо мне» под ATS (кнопка «Подогнать под ATS» над блоком «Обо мне»)."""
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     data = await read_resume_data_for_account(account_id, db=db)
     ctx, _gaps, _count, _has_market = await build_ats_fit_context(
@@ -461,8 +461,8 @@ async def iter_ats_fit_events(*, account_id: int, db: Executor | None = None):
     from core.app.pipeline import Pipeline, Step
 
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     data = await read_resume_data_for_account(account_id, db=db)
     ctx, gaps, top_jobs_count, has_market = await build_ats_fit_context(

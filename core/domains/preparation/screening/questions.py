@@ -26,7 +26,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import (
     CANDIDATE_IDENTITY_TOKEN,
     load_candidate_identity,
@@ -384,8 +384,8 @@ async def generate_screening_questions(
     Нет ключа OpenRouter → `LlmError`. Обе части упали → `LlmError` наверх; упала
     одна - деградируем на том, что собралось (warning в лог).
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     hr_result, groups_result = await asyncio.gather(
         _generate_hr_questions(
@@ -476,8 +476,8 @@ async def generate_more_hr_questions(
     count: int = 6,
 ) -> list[HrQuestion]:
     """Ещё пачка вопросов HR→кандидат, без повторов формулировок из `existing`."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     n = max(1, min(int(count or 6), 12))
     existing_list = list(existing or [])
     existing_norm = {_norm_question(q) for q in existing_list}
@@ -516,8 +516,8 @@ async def generate_more_ask_groups(
     count: int = 6,
 ) -> list[QuestionGroup]:
     """Ещё пачка вопросов кандидат→HR (~count штук в новых группах), без повторов."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     n = max(1, min(int(count or 6), 12))
     existing_list = list(existing or [])
     existing_norm = {_norm_question(q) for q in existing_list}

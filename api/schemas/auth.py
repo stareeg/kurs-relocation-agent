@@ -23,6 +23,9 @@ class AuthStatusResponse(BaseModel):
     authed: bool
     auth_token_configured: bool
     openrouter_key_configured: bool
+    # A-0: серверный провайдер модели настроен на стенде — разделы открыты и без своего
+    # ключа OpenRouter. Фронт считает доступ к модели по этому флагу вместе с ключом.
+    server_llm_available: bool = False
     extension_confirmed: bool
     bot_configured: bool
     bot_username: str | None = None

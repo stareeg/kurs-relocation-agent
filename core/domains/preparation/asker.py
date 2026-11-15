@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.assistant.models import AskMessage
 from core.domains.preparation.models import ScoreResult, VacancyRecord
 from core.domains.preparation.prompts import build_qa_system_prompt
@@ -75,8 +75,8 @@ async def ask_about_vacancy(
     bundle=_UNSET,
     account_id: int | None = None,
 ) -> str:
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     history = history or []
     if bundle is _UNSET:

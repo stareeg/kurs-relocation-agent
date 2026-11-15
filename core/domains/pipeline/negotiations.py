@@ -15,7 +15,11 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from core.config import CoreSettings, get_settings
+from core.config import (
+    CoreSettings,
+    get_settings,
+    llm_available,
+)
 from core.domains.offers.hh_negotiations import (
     HhNegotiationStatus,
     NegotiationMapResult,
@@ -134,7 +138,7 @@ async def _resolve_item(
     llm_used = False
 
     need_llm = use_llm and (hh == HhNegotiationStatus.UNKNOWN or not mapped.funnel_status)
-    if need_llm and settings.openrouter_api_key:
+    if need_llm and llm_available(settings=settings):
         try:
             from core.domains.pipeline.funnel_status_llm import resolve_funnel_status_llm
 
@@ -229,7 +233,7 @@ async def _sync_one(
         and discrepancy
         and not llm_used
         and use_llm
-        and settings.openrouter_api_key
+        and llm_available(settings=settings)
         and not current_is_manual_rejection
     ):
         # EX-8: раньше guard молча блокировал понижение и ждал ручного force-клика «Применить» —

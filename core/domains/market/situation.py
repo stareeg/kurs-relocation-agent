@@ -34,7 +34,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import CoreSettings, get_settings
+from core.config import (
+    CoreSettings,
+    get_settings,
+    llm_available,
+)
 from core.domains.market.market_grid import MarketGrid, format_market_grid_json_for_llm
 from core.domains.market.search_metrics import SearchMetrics, get_search_metrics
 from core.domains.offers.store import Offer, load_active_offers
@@ -805,8 +809,8 @@ async def generate_situation_narrative(
 ) -> SituationNarrative:
     """Сгенерировать сводку аккаунта reasoning-моделью по grid + facts."""
     cfg = settings or get_settings()
-    if not cfg.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=cfg):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     system, user = await _situation_facts_and_prompt(account_id=account_id, db=db, cfg=cfg)
 
@@ -836,8 +840,8 @@ async def generate_situation_narrative_events(
 ) -> AsyncIterator[dict[str, Any]]:
     """Тот же расчёт, отдаёт статус, затем терминальный кадр (один вызов, не diagnosis/actions)."""
     cfg = settings or get_settings()
-    if not cfg.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=cfg):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     system, user = await _situation_facts_and_prompt(account_id=account_id, db=db, cfg=cfg)
 

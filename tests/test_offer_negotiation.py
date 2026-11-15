@@ -97,7 +97,7 @@ async def test_negotiate_offer_requires_api_key(monkeypatch):
     try:
         await negotiate_offer(_offer(), account_id=1)
     except Exception as exc:  # noqa: BLE001 - LlmError без ключа
-        assert "OPENROUTER_API_KEY" in str(exc)
+        assert "Модель недоступна" in str(exc)
     else:
         raise AssertionError("negotiate_offer must raise without an API key")
 

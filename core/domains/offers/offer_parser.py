@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.offers.bonus import (
     normalize_bonus_types,
     primary_bonus_type,
@@ -261,8 +261,8 @@ async def parse_offer_text(
 
     Поднимает LlmError при сбоях LLM, ValueError при пустом тексте.
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     stripped = text.strip()
     if len(stripped) < 20:
         raise ValueError("Текст оффера слишком короткий")

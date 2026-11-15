@@ -7,6 +7,7 @@ function status(overrides: Partial<AuthStatus> = {}): AuthStatus {
     authed: false,
     auth_token_configured: false,
     openrouter_key_configured: false,
+    server_llm_available: false,
     extension_confirmed: false,
     bot_configured: false,
     bot_username: null,
@@ -53,6 +54,10 @@ describe("онбординг AUTH-1: нет мёртвых путей", () => {
       isGateOpen(
         status({ authed: true, auth_token_configured: true, openrouter_key_configured: true }),
       ),
+    ).toBe(true)
+    // A-0: своего ключа нет, но модель выдаёт сервер — онбординг не требует ключа.
+    expect(
+      isGateOpen(status({ authed: true, auth_token_configured: true, server_llm_available: true })),
     ).toBe(true)
     // Токен выпущен, но запрос не авторизован (протухшая cookie) — гейт закрыт.
     expect(

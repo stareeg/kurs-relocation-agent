@@ -28,6 +28,7 @@ class LlmSettings(BaseModel):
     model_tier_advanced: str = ""
     model_tier_basic: str = ""
     model_tier_reserve: str = ""
+
     # Раздел «Мультиплеер» — три роли, а не одна модель (Э19.8).
     # `model_multiplayer` — «режиссёр»: мир слота, газета, всё, что про рынок и IT-подоплёку.
     # `model_multiplayer_actor` — «актёр»: прямая речь персонажей (реплики, реакции).
@@ -91,4 +92,37 @@ class LlmSettings(BaseModel):
         return normalize_openrouter_model(self.model_tier_fallback.get(tier, ""))
 
 
-__all__ = ["LlmSettings"]
+class ServerLlmSettings(BaseModel):
+    """Серверный провайдер модели (A-0): OpenAI-совместимый адрес перед инференс-ВМ.
+
+    Чаще всего это LiteLLM на том же стенде; приложение ходит туда одним серверным ключом и
+    про инференс-ВМ/OpenRouter не знает. Пусто у `server_llm_base_url` или
+    `server_llm_api_key` = режима нет, всё идёт через OpenRouter, как раньше.
+
+    Ключ живёт только в окружении стенда: в UI и в API он не выходит ни в каком виде —
+    наружу отдаётся лишь флаг «серверная модель доступна» (см. `server_llm_available`).
+    """
+
+    server_llm_base_url: str = ""
+    server_llm_api_key: str = ""
+    # Имена моделей на серверном провайдере по тирам (алиасы LiteLLM, не slug OpenRouter).
+    # Пусто = серверный режим для этого тира не настроен, фабрика падает явной ошибкой.
+    model_server_advanced: str = ""
+    model_server_basic: str = ""
+    model_server_reserve: str = ""
+
+    def server_llm_available(self) -> bool:
+        """Серверный провайдер настроен целиком (адрес и ключ)."""
+        return bool(self.server_llm_base_url.strip() and self.server_llm_api_key.strip())
+
+    def server_tier_model(self, tier: str) -> str:
+        """Имя модели на серверном провайдере для тира; пусто — тир там не настроен."""
+        raw = {
+            "advanced": self.model_server_advanced,
+            "basic": self.model_server_basic,
+            "reserve": self.model_server_reserve,
+        }.get(tier, "")
+        return raw.strip()
+
+
+__all__ = ["LlmSettings", "ServerLlmSettings"]

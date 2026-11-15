@@ -103,7 +103,7 @@ async def test_generate_screening_pitch_requires_api_key(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         pitch_module, "get_settings", lambda: type("S", (), {"openrouter_api_key": ""})()
     )
-    with pytest.raises(Exception, match="OPENROUTER_API_KEY"):
+    with pytest.raises(Exception, match="Модель недоступна"):
         await generate_screening_pitch(account_id=1, brief=_brief())
 
 

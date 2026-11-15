@@ -76,7 +76,7 @@ export function JobsPage() {
   }, [searchParams, applyFilters, setSearchParams])
   const hasJobs = (jobs?.length ?? 0) > 0
   const showExtensionOnboarding =
-    Boolean(appSettings?.openrouter_key_configured) &&
+    Boolean(appSettings?.openrouter_key_configured || appSettings?.server_llm_available) &&
     Boolean(resume && isResumeFilled(resume)) &&
     !hasJobs
 

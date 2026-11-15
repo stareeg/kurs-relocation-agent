@@ -28,6 +28,7 @@ from api.schemas import (
 )
 from api.security import AccountContext, require_account, require_account_context
 from core.app.settings_defaults import default_app_settings_values
+from core.config import get_settings as get_core_settings
 from core.domains.opportunities.discovery_session import (
     discovery_config_from_mapping,
     set_discovery_config,
@@ -161,6 +162,7 @@ async def _load_response(*, account_id: int | None) -> AppSettingsResponse:
         company_adjustments=company_adjustments,
         salary_min_override=salary_override,
         openrouter_key_configured=key_state.configured,
+        server_llm_available=get_core_settings().server_llm_available(),
         openrouter_key_set_at=key_state.issued_at,
         openrouter_key_origin=key_state.origin,
         openrouter_key_request_status=key_state.request_status,

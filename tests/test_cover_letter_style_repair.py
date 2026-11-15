@@ -46,7 +46,7 @@ async def test_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         cover_letter_module, "get_settings", lambda: type("S", (), {"openrouter_api_key": ""})()
     )
-    with pytest.raises(Exception, match="OPENROUTER_API_KEY"):
+    with pytest.raises(Exception, match="Модель недоступна"):
         await generate_cover_letter(_record(), account_id=1)
 
 

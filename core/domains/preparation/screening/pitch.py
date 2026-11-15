@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import (
     CANDIDATE_IDENTITY_TOKEN,
     load_candidate_identity,
@@ -207,8 +207,8 @@ async def generate_screening_pitch(
 
     Нет ключа OpenRouter → `LlmError`.
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     system_prompt = await _load_system_prompt(account_id=account_id)
     user = _build_user_prompt(brief, title, company, score_summary)

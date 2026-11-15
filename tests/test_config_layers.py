@@ -14,6 +14,7 @@ from core.config import (
     DbSettings,
     IntegrationSettings,
     LlmSettings,
+    ServerLlmSettings,
     clear_settings_cache,
     ensure_env_file,
     get_settings,
@@ -29,9 +30,10 @@ def _clear_settings():
     clear_settings_cache()
 
 
-def test_core_settings_is_composed_of_four_sections():
+def test_core_settings_is_composed_of_five_sections():
     assert issubclass(CoreSettings, DbSettings)
     assert issubclass(CoreSettings, LlmSettings)
+    assert issubclass(CoreSettings, ServerLlmSettings)
     assert issubclass(CoreSettings, AppSettings)
     assert issubclass(CoreSettings, IntegrationSettings)
 
@@ -103,6 +105,7 @@ def test_section_field_counts_are_focused():
     """Секции заметно меньше монолита: ошибка по секции не тянет 95 полей."""
     assert len(DbSettings.model_fields) <= 12
     assert len(LlmSettings.model_fields) <= 25
+    assert len(ServerLlmSettings.model_fields) <= 6
     assert len(AppSettings.model_fields) <= 20
     total = len(CoreSettings.model_fields)
     # Монолит был ~95 с prompt_path; после A-06/A-18 — заметно меньше.

@@ -1,7 +1,7 @@
 """Фасад настроек ядра: реализация в `core.platform.config`.
 
 Импорты `from core.config import get_settings, CoreSettings, …` остаются каноном для
-доменов и api. Секции: DbSettings / LlmSettings / AppSettings / IntegrationSettings.
+доменов и api. Секции: DbSettings / LlmSettings / ServerLlmSettings / AppSettings / IntegrationSettings.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from core.platform.config import (
     DbSettings,
     IntegrationSettings,
     LlmSettings,
+    ServerLlmSettings,
     account_openrouter_key_cache_stale,
     cache_account_openrouter_key,
     clear_settings_cache,
@@ -20,6 +21,7 @@ from core.platform.config import (
     current_account_openrouter_key,
     ensure_env_file,
     get_settings,
+    llm_available,
     load_settings,
     normalize_openrouter_model,
     reset_current_account_id,
@@ -36,6 +38,7 @@ __all__ = [
     "DbSettings",
     "IntegrationSettings",
     "LlmSettings",
+    "ServerLlmSettings",
     "account_openrouter_key_cache_stale",
     "cache_account_openrouter_key",
     "clear_settings_cache",
@@ -43,6 +46,7 @@ __all__ = [
     "current_account_openrouter_key",
     "ensure_env_file",
     "get_settings",
+    "llm_available",
     "load_settings",
     "normalize_openrouter_model",
     "reset_current_account_id",

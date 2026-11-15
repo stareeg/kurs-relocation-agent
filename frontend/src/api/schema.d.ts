@@ -6721,6 +6721,11 @@ export interface components {
              * @default false
              */
             openrouter_key_configured: boolean;
+            /**
+             * Server Llm Available
+             * @default false
+             */
+            server_llm_available?: boolean;
             /** Openrouter Key Set At */
             openrouter_key_set_at?: string | null;
             /** Openrouter Key Origin */
@@ -7003,6 +7008,11 @@ export interface components {
             auth_token_configured: boolean;
             /** Openrouter Key Configured */
             openrouter_key_configured: boolean;
+            /**
+             * Server Llm Available
+             * @default false
+             */
+            server_llm_available?: boolean;
             /** Extension Confirmed */
             extension_confirmed: boolean;
             /** Bot Configured */

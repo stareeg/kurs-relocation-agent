@@ -83,7 +83,7 @@ async def test_generate_screening_questions_requires_api_key(
     monkeypatch.setattr(
         questions_module, "get_settings", lambda: type("S", (), {"openrouter_api_key": ""})()
     )
-    with pytest.raises(Exception, match="OPENROUTER_API_KEY"):
+    with pytest.raises(Exception, match="Модель недоступна"):
         await generate_screening_questions(account_id=1, brief=_brief())
 
 

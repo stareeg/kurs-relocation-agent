@@ -15,7 +15,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from langchain_core.callbacks import (
@@ -122,6 +122,14 @@ _ROLE_BY_TYPE = {"system": "system", "human": "user", "ai": "assistant", "tool":
 # это последний рубеж перед HTTP-вызовом, а не продуктовый лимит композера.
 _ATTACHMENT_MAX_PER_MESSAGE = 10
 _ATTACHMENT_MAX_TOTAL_BYTES = 40 * 1024 * 1024  # ~10 нормализованных скринов с запасом
+
+# У GLM 5.3 Flash уровней думания два (low/high), а фичи объявляют четыре значения на модeль
+# OpenRouter (`none`/`low`/`medium`/`high` — L-14). Перевод в одну строку, чтобы правка после
+# замеров не требовала трогать декларации фич: «none» на GLM выключить нельзя (это всё равно
+# максимум), а `medium` опускаем до `low` — замеры P0-4 показали, что `high` на длинном входе
+# стоит 90+ секунд, и держать его по умолчанию нельзя. Узлы, которым нужен `high` (планировщик,
+# судья итога), объявляют его явно.
+_SERVER_EFFORT_MAP = {"none": "low", "low": "low", "medium": "low", "high": "high"}
 
 # Ключи JSON-схемы, которые Anthropic (и Amazon Bedrock) structured output не поддерживают на
 # integer: minimum/maximum → HTTP 400 "For 'integer' type, properties maximum, minimum are not
@@ -357,6 +365,10 @@ class OpenRouterChatModel(BaseChatModel):
     budget_ms: int | None = None
     base_url: str = "https://openrouter.ai/api/v1"
     api_key: str = ""
+    # Форма запроса: "openrouter" шлёт поля OpenRouter (`usage.include`, `provider`,
+    # `reasoning`-объект), "openai" — только OpenAI-совместимые (`reasoning_effort` строкой).
+    # Серверный провайдер (LiteLLM → инференс-ВМ) работает во втором режиме.
+    api_style: Literal["openrouter", "openai"] = "openrouter"
     proxy: str | None = None
     # OpenRouter reasoning-effort (low/medium/high). None → reasoning не шлём (по умолчанию).
     reasoning_effort: str | None = None
@@ -393,12 +405,14 @@ class OpenRouterChatModel(BaseChatModel):
 
     # --- HTTP + retry (перенос из OpenRouterClient) ---
     def _headers(self) -> dict[str, str]:
-        return {
+        headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://relocation-copilot.local",
-            "X-Title": "Career & Relocation Copilot",
         }
+        if self.api_style == "openrouter":
+            headers["HTTP-Referer"] = "https://relocation-copilot.local"
+            headers["X-Title"] = "Career & Relocation Copilot"
+        return headers
 
     def _chat_url(self) -> str:
         return f"{self.base_url.rstrip('/')}/chat/completions"
@@ -619,8 +633,10 @@ class OpenRouterChatModel(BaseChatModel):
         payload: dict[str, Any] = {
             "model": model,
             "messages": _to_openrouter_messages(messages, model=model),
-            "usage": {"include": True},
         }
+        # `usage.include` — поле OpenRouter; OpenAI-совместимый апстрим его не понимает.
+        if self.api_style == "openrouter":
+            payload["usage"] = {"include": True}
         # sampling-параметры поддерживает не каждая модель: Claude Sonnet 5 / Opus 4.8 и др.
         # отвергают temperature/top_p/top_k с 400. Шлём только если модель их принимает.
         if _supports_sampling(model):
@@ -630,7 +646,7 @@ class OpenRouterChatModel(BaseChatModel):
             payload["max_tokens"] = max_tokens
         if stop:
             payload["stop"] = stop
-        if self.provider_prefs:
+        if self.provider_prefs and self.api_style == "openrouter":
             payload["provider"] = self.provider_prefs
         if kwargs.get("tools"):
             payload["tools"] = kwargs["tools"]
@@ -648,10 +664,19 @@ class OpenRouterChatModel(BaseChatModel):
         # на скрытый reasoning и возвращает пустой content при json_schema. Держим это
         # здесь, а не в декларации фичи, чтобы смена MODEL_MULTIPLAYER на другую модель не
         # требовала знать, как у неё называется выключение thinking.
-        if self.reasoning_effort == "none":
-            payload["reasoning"] = {"enabled": False}
-        elif self.reasoning_effort:
-            payload["reasoning"] = {"effort": self.reasoning_effort}
+        if self.api_style == "openrouter":
+            if self.reasoning_effort == "none":
+                payload["reasoning"] = {"enabled": False}
+            elif self.reasoning_effort:
+                payload["reasoning"] = {"effort": self.reasoning_effort}
+        elif self.api_style == "openai":
+            # OpenAI-совместимый апстрим (llama.cpp за LiteLLM) понимает только строковый
+            # `reasoning_effort` верхнего уровня — и только в терминах low/high. Без усилия
+            # GLM думает по умолчанию долго (замеры P0-4: 20 с против 7 с на короткой задаче),
+            # поэтому пустое значение тоже опускаем до low: «не рассуждать» на этой модели
+            # недостижимо, ближайшее к нему — low.
+            requested = self.reasoning_effort or "low"
+            payload["reasoning_effort"] = _SERVER_EFFORT_MAP.get(requested, requested)
         return payload
 
     @staticmethod
@@ -1151,6 +1176,14 @@ class _StructuredOutputRunnable(Runnable[LanguageModelInput, Any]):
         )
 
 
+def _server_tier_model(settings: Any, tier: str) -> str:
+    """Модель тира на серверном провайдере. Часть тестов подсовывает стаб настроек без метода."""
+    resolver = getattr(settings, "server_tier_model", None)
+    if callable(resolver):
+        return str(resolver(tier) or "")
+    return str(getattr(settings, f"model_server_{tier}", "") or "")
+
+
 def get_chat_model(
     tier_or_agent: str,
     *,
@@ -1185,18 +1218,57 @@ def get_chat_model(
         if tier not in TIERS:
             tier = "basic"
 
-    primary = normalize_openrouter_model(model_override or settings.tier_model(tier))
-    if not primary:
-        raise OpenRouterError(
-            f"Не задана модель для тира '{tier}' (MODEL_TIER_{tier.upper()} в .env)"
+    # A-0: аккаунт без своего ключа OpenRouter идёт на серверный провайдер (LiteLLM перед
+    # инференс-ВМ). Личный ключ сильнее: человек, вставивший свой, платит им и идёт прямо в
+    # OpenRouter, как раньше. Ключ сервера не выходит из настроек процесса.
+    account_scoped = current_account_id() is not None
+    account_key = current_account_openrouter_key() if account_scoped else ""
+    server_base = str(getattr(settings, "server_llm_base_url", "") or "").strip()
+    server_key = str(getattr(settings, "server_llm_api_key", "") or "").strip()
+    server_mode = bool(server_base and server_key) and not account_key
+    api_style: Literal["openrouter", "openai"] = "openai" if server_mode else "openrouter"
+
+    if server_mode:
+        primary = (model_override or _server_tier_model(settings, tier)).strip()
+        if not primary:
+            raise OpenRouterError(
+                f"Серверный провайдер не задал модель для тира '{tier}' "
+                f"(MODEL_SERVER_{tier.upper()} в .env)"
+            )
+        # Цепочку деградации по моделям держит LiteLLM (у него свой router fallbacks):
+        # в приложении запасных slug'ов OpenRouter для серверного режима нет.
+        fallback_model = ""
+        tier_fallback_model = ""
+        override_base = ""
+        provider_prefs: dict[str, Any] = {}
+        base_url = server_base
+        api_key = server_key
+    else:
+        primary = normalize_openrouter_model(model_override or settings.tier_model(tier))
+        if not primary:
+            raise OpenRouterError(
+                f"Не задана модель для тира '{tier}' (MODEL_TIER_{tier.upper()} в .env)"
+            )
+        # При явном override модель тира не выпадает из цепочки деградации — иначе перегруженный
+        # override падает сразу в глобальный fallback (см. `_models_to_try`).
+        override_base = ""
+        if model_override:
+            tier_slug = normalize_openrouter_model(settings.tier_model(tier) or "")
+            if tier_slug and tier_slug != primary:
+                override_base = tier_slug
+        fallback_model = normalize_openrouter_model(settings.openrouter_model_fallback or "")
+        tier_fallback_model = settings.tier_fallback(tier)
+        # getattr: часть тестов подсовывает урезанный стаб настроек без нового поля.
+        provider_prefs = dict(getattr(settings, "openrouter_provider", None) or {})
+        base_url = settings.openrouter_base_url
+        # Ключ (Этап 5 + изоляция member'ов):
+        # - запрос/апдейт с account_id и своим ключом — ТОЛЬКО ключ этого аккаунта;
+        # - фон/скрипт без личности — process holder → OPENROUTER_API_KEY из .env.
+        api_key = (
+            account_key
+            if account_scoped
+            else (runtime_openrouter_key() or settings.openrouter_api_key)
         )
-    # При явном override модель тира не выпадает из цепочки деградации — иначе перегруженный
-    # override падает сразу в глобальный fallback (см. `_models_to_try`).
-    override_base = ""
-    if model_override:
-        tier_slug = normalize_openrouter_model(settings.tier_model(tier) or "")
-        if tier_slug and tier_slug != primary:
-            override_base = tier_slug
 
     # agent/tier → tags и metadata каждого рана LangSmith (cost попадает в on_llm_end
     # через llm_output/usage_metadata, подшаг 2).
@@ -1221,27 +1293,18 @@ def get_chat_model(
 
     model = OpenRouterChatModel(
         primary_model=primary,
-        fallback_model=normalize_openrouter_model(settings.openrouter_model_fallback or ""),
-        tier_fallback_model=settings.tier_fallback(tier),
+        fallback_model=fallback_model,
+        tier_fallback_model=tier_fallback_model,
         override_base_model=override_base,
-        # getattr: часть тестов подсовывает урезанный стаб настроек без нового поля.
-        provider_prefs=dict(getattr(settings, "openrouter_provider", None) or {}),
+        provider_prefs=provider_prefs,
         tier=tier,
         agent=agent_name,
         temperature=temperature,
         max_tokens=max_tokens,
         max_retries=settings.llm_max_retries,
-        base_url=settings.openrouter_base_url,
-        # Ключ (Этап 5 + изоляция member'ов):
-        # - если запрос/апдейт привязан к account_id — ТОЛЬКО ключ этого аккаунта
-        #   (пустой = нет ключа; не падаем на runtime/.env владельца — иначе расширение
-        #   до BYOK жжёт счёт оператора);
-        # - фон/скрипт без личности — process holder → OPENROUTER_API_KEY из .env.
-        api_key=(
-            current_account_openrouter_key()
-            if current_account_id() is not None
-            else (runtime_openrouter_key() or settings.openrouter_api_key)
-        ),
+        base_url=base_url,
+        api_key=api_key,
+        api_style=api_style,
         proxy=settings.openrouter_proxy or None,
         reasoning_effort=reasoning_effort,
         **kwargs,

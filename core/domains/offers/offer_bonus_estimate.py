@@ -9,7 +9,7 @@ import logging
 import re
 from functools import lru_cache
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.offers.bonus import offer_bonus_types
 from core.domains.offers.models import OfferRecord
 from core.kernel import ports
@@ -68,8 +68,8 @@ def deterministic_bonus_monthly_equiv(offer: OfferRecord) -> int | None:
 
 async def estimate_bonus_monthly_equiv(offer: OfferRecord) -> int | None:
     """LLM-оценка для случаев, где детерминированная формула не годится (KPI и т.п.)."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     system = _load_prompt()
     user = json.dumps(
         {

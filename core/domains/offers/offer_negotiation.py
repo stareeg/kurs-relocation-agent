@@ -22,7 +22,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.market.salary_benchmark import SalaryBenchmarkSegment
 from core.domains.offers.models import NegotiationArgument, NegotiationBrief, OfferRecord
 from core.domains.pipeline.hr_draft import HR_STYLE_BLOCK
@@ -249,8 +249,8 @@ async def negotiate_offer(
     salary_line: str = "",
 ) -> NegotiationBrief:
     """Собрать аргументы для торга по одному офферу через LLM. Резюме — аккаунта запроса."""
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     system, dynamic_tail = await _build_system_parts(
         account_id=account_id,

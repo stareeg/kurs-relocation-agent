@@ -10,7 +10,7 @@ import json
 import logging
 import re
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.kernel import ports
 from core.kernel.errors import LlmError
 from core.kernel.schemas.funnel import FunnelStatus, all_funnel_status_values, resolve_funnel_status
@@ -84,7 +84,7 @@ async def resolve_funnel_status_llm(
     reasoning классификатора раньше жил только в памяти функции и `llm_result_cache`, до
     бандла поддержки (`GET /api/logs/bundle`) не долетал вовсе.
     """
-    if not get_settings().openrouter_api_key:
+    if not llm_available(settings=get_settings()):
         fallback = resolve_funnel_status(current_status) or FunnelStatus.APPLIED
         return fallback, "LLM недоступен (нет API key)"
 

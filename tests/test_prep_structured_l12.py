@@ -123,5 +123,5 @@ async def test_generate_prep_questions_requires_api_key(monkeypatch: pytest.Monk
     with ports.use_ports(llm=fake):
         with pytest.raises(Exception) as exc:
             await generate_prep_questions(_record(), "tech", account_id=1)
-    assert "OPENROUTER_API_KEY" in str(exc.value)
+    assert "Модель недоступна" in str(exc.value)
     assert fake.calls == []

@@ -23,7 +23,7 @@ import logging
 import re
 from typing import Literal
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import load_candidate_identity, load_resume
 from core.domains.preparation.models import VacancyRecord
 from core.domains.preparation.vacancy_context import truncate_vacancy_text
@@ -545,8 +545,8 @@ async def generate_cover_letter(
     Анти-slop: один ремонтный вызов при нарушениях линтера — максимум 2 LLM-вызова на сценарий.
     Telegram-ник из резюме (`@nickname`) добавляется первой строкой на обоих языках.
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     effective_lang = await _resolve_effective_lang(lang, account_id=account_id)
     if effective_lang == "en":

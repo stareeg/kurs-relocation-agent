@@ -28,7 +28,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.profile.bullet_format import ensure_bullet_format
 from core.domains.profile.context import StrengthenContext, build_strengthen_context
 from core.domains.profile.model import ResumeData
@@ -375,8 +375,8 @@ async def strengthen_section(
     на single-model rewrite (draft как final).
     """
     settings = get_settings()
-    if not settings.openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=settings):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
     if mode not in ("refine", "rewrite"):
         raise ValueError(f"неизвестный mode: {mode}")
     if mode == "refine" and (not text or len(text.strip()) < 30):

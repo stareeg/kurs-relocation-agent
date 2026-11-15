@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from core.config import get_settings
+from core.config import get_settings, llm_available
 from core.domains.opportunities.prompt import load_candidate_identity
 from core.domains.preparation.interview.company_profiles import CompanyProfile
 from core.domains.preparation.interview.prep_context import gather_prep_context
@@ -183,8 +183,8 @@ async def generate_prep_pack(
 
     Нет ключа OpenRouter → `LlmError`; бюджетные стоп-краны пробрасываются (роутер → 429).
     """
-    if not get_settings().openrouter_api_key:
-        raise LlmError("OPENROUTER_API_KEY не задан")
+    if not llm_available(settings=get_settings()):
+        raise LlmError("Модель недоступна: нет ключа OpenRouter и не настроен серверный провайдер")
 
     # RD-21: сбор слабых тем + фидбека рекрутёра централизован в prep_context — отдельного сбора
     # здесь больше не нужно, бриф стал витриной того же контекста, что видит генерация вопросов.
