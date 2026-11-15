@@ -1,3 +1,7 @@
+// ВНИМАНИЕ: файл для Render (Node.js), НЕ для Cloudflare Workers.
+// В Workers нет `require`/`http` и исполнение идёт в Хельсинки, где OpenRouter отвечает 403
+// на запросы курса. Воркер для Telegram лежит отдельно: deploy/cloudflare/proxy_worker.js.
+//
 // Прокси-релей OpenRouter на фиксированном (не Anycast) регионе — docs/problems.md, 2026-08-05.
 //
 // Почему не тот же Cloudflare Worker, что уже проксирует Telegram (deploy/cloudflare/
