@@ -1,16 +1,5 @@
 import { cn } from "@/lib/utils"
-
-export type PhaseId = "bulletin" | "play" | "inspect" | "lines" | "stamp" | "judge" | "result"
-
-export const PHASE_LABEL: Record<PhaseId, string> = {
-  bulletin: "Бюллетень",
-  play: "Подача",
-  inspect: "Осмотр",
-  lines: "Реплики",
-  stamp: "Штамп",
-  judge: "Суд",
-  result: "Итог",
-}
+import { PHASE_LABEL, type PhaseId } from "./phaseLabels"
 
 type PhaseRailProps = {
   current: PhaseId
@@ -23,15 +12,6 @@ type PhaseRailProps = {
   className?: string
   /** Встроенный режим для шапки: без рамки/фона, компактные чипы. */
   compact?: boolean
-}
-
-/** Подпись текущей фазы для шапки стола (SIGame tableCaption). */
-export function phaseCaptionLabel(
-  phase: PhaseId,
-  between: boolean,
-): string {
-  if (between) return "Передышка"
-  return PHASE_LABEL[phase] ?? phase
 }
 
 /** Полоска фаз слота: где мы в раскладе «Бюллетень → … → Итог». */

@@ -7,10 +7,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from core.app import admin_ops as svc
 from core.domains.opportunities.discovery_session import DiscoveryConfig, DiscoveryStatus
 from core.domains.pipeline.auto_apply.config import AutoApplyConfig, AutoApplyPlatformConfig
 from core.domains.pipeline.auto_apply.queue import AutoApplyQueuePreview
-from core.platform.admin import service as svc
+from core.platform.admin import service as admin_svc
+from core.platform.admin.models import AdminError
 
 
 class _Job:
@@ -37,7 +39,7 @@ def _preview(platform: str, auto: int, manual: int, pending: int) -> AutoApplyQu
 
 
 async def test_load_user_pipeline_assembles_per_platform(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "_fetchrow", AsyncMock(return_value={"account_id": 3}))
+    monkeypatch.setattr(admin_svc, "_fetchrow", AsyncMock(return_value={"account_id": 3}))
     monkeypatch.setattr(svc, "_extension_tick_seconds", AsyncMock(return_value=300))
     monkeypatch.setattr(svc, "_extension_discovery_tick_seconds", AsyncMock(return_value=60))
 
@@ -51,14 +53,8 @@ async def test_load_user_pipeline_assembles_per_platform(monkeypatch: pytest.Mon
     d_config.hh.daily_cap = 60
     d_config.hh.search_urls = ["https://hh.ru/search?x=1", " "]
 
-    monkeypatch.setattr(
-        "core.domains.pipeline.auto_apply.get_auto_apply_config",
-        AsyncMock(return_value=aa_config),
-    )
-    monkeypatch.setattr(
-        "core.domains.opportunities.discovery_session.get_discovery_config",
-        AsyncMock(return_value=d_config),
-    )
+    monkeypatch.setattr(svc, "get_auto_apply_config", AsyncMock(return_value=aa_config))
+    monkeypatch.setattr(svc.ds, "get_discovery_config", AsyncMock(return_value=d_config))
 
     async def fake_status(platform, *, account_id):
         state = "running" if platform == "hh" else "idle"
@@ -70,29 +66,21 @@ async def test_load_user_pipeline_assembles_per_platform(monkeypatch: pytest.Mon
             daily_cap=200 if platform == "hh" else 60,
         )
 
-    monkeypatch.setattr(
-        "core.domains.opportunities.discovery_session.get_discovery_status",
-        AsyncMock(side_effect=fake_status),
-    )
+    monkeypatch.setattr(svc.ds, "get_discovery_status", AsyncMock(side_effect=fake_status))
 
     async def fake_preview(platform, *, account_id):
         return _preview(platform, auto=3 if platform == "hh" else 0, manual=2, pending=1)
 
+    monkeypatch.setattr(svc, "preview_queue", AsyncMock(side_effect=fake_preview))
     monkeypatch.setattr(
-        "core.domains.pipeline.auto_apply.preview_queue", AsyncMock(side_effect=fake_preview)
-    )
-    monkeypatch.setattr(
-        "core.domains.pipeline.auto_apply.count_today",
+        svc,
+        "count_today",
         AsyncMock(side_effect=lambda platform, *, account_id: 4 if platform == "hh" else 0),
     )
     monkeypatch.setattr(
-        "core.domains.pipeline.auto_apply.runtime_state.get_last_tick",
-        AsyncMock(return_value={"at": "2026-08-28T11:55:00+00:00"}),
+        svc, "get_last_tick", AsyncMock(return_value={"at": "2026-08-28T11:55:00+00:00"})
     )
-    monkeypatch.setattr(
-        "core.domains.opportunities.discovery_session.get_last_runner_tick",
-        AsyncMock(return_value=None),
-    )
+    monkeypatch.setattr(svc.ds, "get_last_runner_tick", AsyncMock(return_value=None))
 
     result = await svc.load_user_pipeline(3)
 
@@ -118,8 +106,8 @@ async def test_load_user_pipeline_assembles_per_platform(monkeypatch: pytest.Mon
 
 
 async def test_load_user_pipeline_404_when_no_account(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(svc, "_fetchrow", AsyncMock(return_value=None))
-    with pytest.raises(svc.AdminError) as exc:
+    monkeypatch.setattr(admin_svc, "_fetchrow", AsyncMock(return_value=None))
+    with pytest.raises(AdminError) as exc:
         await svc.load_user_pipeline(999)
     assert exc.value.status == 404
 
@@ -129,7 +117,7 @@ async def test_pause_user_auto_apply_calls_scenario_and_audits(
 ) -> None:
     monkeypatch.setattr(svc, "get_account_by_id", AsyncMock(return_value=object()))
     log_mock = AsyncMock()
-    monkeypatch.setattr(svc, "_log_action", log_mock)
+    monkeypatch.setattr(admin_svc, "_log_action", log_mock)
     pause_mock = AsyncMock()
     monkeypatch.setattr("core.app.scenarios.auto_apply.pause_all", pause_mock)
 
@@ -143,13 +131,13 @@ async def test_pause_user_auto_apply_calls_scenario_and_audits(
 
 async def test_resume_user_auto_apply_404(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(svc, "get_account_by_id", AsyncMock(return_value=None))
-    with pytest.raises(svc.AdminError):
+    with pytest.raises(AdminError):
         await svc.resume_user_auto_apply(404, actor_id=1)
 
 
 async def test_clear_user_auto_apply_queue_returns_count(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(svc, "get_account_by_id", AsyncMock(return_value=object()))
-    monkeypatch.setattr(svc, "_log_action", AsyncMock())
+    monkeypatch.setattr(admin_svc, "_log_action", AsyncMock())
     monkeypatch.setattr("core.app.scenarios.auto_apply.clear_queue", AsyncMock(return_value=6))
 
     cleared = await svc.clear_user_auto_apply_queue(7, actor_id=1)

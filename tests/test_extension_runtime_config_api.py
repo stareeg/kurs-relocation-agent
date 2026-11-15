@@ -72,12 +72,15 @@ def test_extension_config_serves_override(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 async def test_admin_set_override_bumps_version_and_clears(monkeypatch: pytest.MonkeyPatch) -> None:
-    """set_extension_runtime_config_admin: пишет через set_setting, поднимает version, `{}` снимает."""
+    """set_extension_runtime_config_admin: пишет через set_setting, version++, `{}` снимает."""
+    from core.app import admin_ops
     from core.platform.admin import service as admin_service
 
     store: dict[str, object] = {}
 
-    async def fake_get_setting(key: str, default: object = None, *, account_id: object, db: object = None):
+    async def fake_get_setting(
+        key: str, default: object = None, *, account_id: object, db: object = None
+    ):
         return store.get(key, default)
 
     async def fake_set_setting(key: str, value: object, *, account_id: object, db: object = None):
@@ -94,14 +97,14 @@ async def test_admin_set_override_bumps_version_and_clears(monkeypatch: pytest.M
     monkeypatch.setattr(
         "core.domains.opportunities.extension_runtime_config.set_setting", fake_set_setting
     )
-    monkeypatch.setattr(admin_service, "get_pool", lambda: _Pool())
+    monkeypatch.setattr(admin_ops, "get_pool", lambda: _Pool())
 
     async def noop_log(*a: object, **k: object) -> None:
         return None
 
     monkeypatch.setattr(admin_service, "_log_action", noop_log)
 
-    res = await admin_service.set_extension_runtime_config_admin(
+    res = await admin_ops.set_extension_runtime_config_admin(
         {"flags": {"auto_apply_getmatch_enabled": False}}, actor_id=1
     )
     assert res["origin"] == "db_override"
@@ -109,6 +112,6 @@ async def test_admin_set_override_bumps_version_and_clears(monkeypatch: pytest.M
     assert res["flags"]["auto_apply_getmatch_enabled"] is False
     assert store["extension_runtime_config"]["version"] == _repo_version() + 1  # type: ignore[index]
 
-    cleared = await admin_service.set_extension_runtime_config_admin({}, actor_id=1)
+    cleared = await admin_ops.set_extension_runtime_config_admin({}, actor_id=1)
     assert cleared["origin"] == "repo"
     assert "extension_runtime_config" not in store

@@ -18,6 +18,15 @@ export function useSlotOutcomes(pub: WolvesWsPublicState | undefined): SlotOutco
   useEffect(() => {
     if (!pub) return
 
+    if (pub.phase === "lobby") {
+      recordedRef.current = new Set()
+      prevRef.current = null
+      // Сброс при возврате в lobby — синхронизация с внешней фазой WS-стола.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- lobby reset
+      setOutcomes({})
+      return
+    }
+
     const prev = prevRef.current
     const record = (slotIdx: number, stamps: Record<string, string>, ticker?: string | null) => {
       if (recordedRef.current.has(slotIdx)) return
@@ -48,14 +57,6 @@ export function useSlotOutcomes(pub: WolvesWsPublicState | undefined): SlotOutco
       ticker: pub.slot_ticker,
     }
   }, [pub])
-
-  useEffect(() => {
-    if (pub?.phase === "lobby") {
-      setOutcomes({})
-      recordedRef.current = new Set()
-      prevRef.current = null
-    }
-  }, [pub?.phase])
 
   return outcomes
 }
