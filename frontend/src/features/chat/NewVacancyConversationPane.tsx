@@ -99,7 +99,9 @@ function AttachSuggestionBanner({
   )
 }
 
-export function NewVacancyConversationPane({
+// U-0/U-1: форма ручного добавления вакансии; монтируется в диалоге тулбара «Вакансий»
+// (AddVacancyDialog), самостоятельной панелью в «Чатах» больше не живёт.
+export function NewVacancyForm({
   draft,
   onDraftChange,
   onCreated,

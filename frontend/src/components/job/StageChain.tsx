@@ -145,7 +145,7 @@ function DraggableStageRow({
                 title="Этап пришёл из переписки с HR"
                 onClick={(e) => {
                   e.stopPropagation()
-                  navigate(`/chat?vacancy=${encodeURIComponent(vacancyId)}`)
+                  navigate(`/jobs/${encodeURIComponent(vacancyId)}`)
                 }}
                 className={cn(
                   "flex size-5 shrink-0 items-center justify-center rounded",

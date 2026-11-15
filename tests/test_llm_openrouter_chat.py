@@ -474,3 +474,86 @@ async def test_situation_narrative_survives_markdown_wrapped_json(
 
     assert narrative.conclusion == "тест сводки"
     assert narrative.steps[0].text == "поменять поведение"
+
+
+@pytest.mark.asyncio
+async def test_broken_personal_key_falls_back_to_server_provider() -> None:
+    """Битая личная заглушка не роняет вызов: первый 401 перекидывает модель на серверный
+    провайдер (A-0), один раз за экземпляр. Стрим — тот же путь (в `_astream`)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "personal.example" in str(request.url):
+            return httpx.Response(
+                401, json={"error": {"message": "No auth credentials found", "code": 401}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "готово"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 2},
+            },
+        )
+
+    llm = OpenRouterChatModel(
+        primary_model="test/model",
+        base_url="https://personal.example/v1",
+        api_key="sk-broken",
+        temperature=0.2,
+    )
+    llm._auth_fallback_base_url = "https://server.example/v1"
+    llm._auth_fallback_api_key = "sk-server"
+    llm._transport = httpx.MockTransport(handler)
+
+    result = await llm.ainvoke([HumanMessage(content="hi")])
+    assert result.content == "готово"
+    assert llm._swapped_api_key == "sk-server"
+    assert llm._chat_url().startswith("https://server.example/v1")
+
+    # Стрим по тому же фолбэку: второй экземпляр, история 401 → сервер отдаёт SSE.
+    def stream_handler(request: httpx.Request) -> httpx.Response:
+        if "personal.example" in str(request.url):
+            return httpx.Response(
+                403, json={"error": {"message": "forbidden", "code": 403}}
+            )
+        body = (
+            'data: {"choices":[{"delta":{"content":"Привет"}}]}\n\n'
+            "data: [DONE]\n\n"
+        )
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+    stream_llm = OpenRouterChatModel(
+        primary_model="test/model",
+        base_url="https://personal.example/v1",
+        api_key="sk-broken",
+        temperature=0.2,
+    )
+    stream_llm._auth_fallback_base_url = "https://server.example/v1"
+    stream_llm._auth_fallback_api_key = "sk-server"
+    stream_llm._transport = httpx.MockTransport(stream_handler)
+
+    chunks = [c.message.content async for c in stream_llm._astream([HumanMessage(content="hi")])]
+    assert "Привет" in "".join(chunks)
+    assert stream_llm._swapped_api_key == "sk-server"
+
+
+@pytest.mark.asyncio
+async def test_no_auth_fallback_configured_keeps_401_error() -> None:
+    """Без серверного провайдера битый личный ключ честно остаётся ошибкой — дефолт
+    `friend-install` не меняется."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": {"message": "no key", "code": 401}})
+
+    llm = OpenRouterChatModel(
+        primary_model="test/model",
+        base_url="https://personal.example/v1",
+        api_key="sk-broken",
+        temperature=0.2,
+    )
+    llm._transport = httpx.MockTransport(handler)
+
+    from core.platform.llm.openrouter_chat import OpenRouterError
+
+    with pytest.raises(OpenRouterError):
+        await llm.ainvoke([HumanMessage(content="hi")])
+    assert llm._swapped_api_key == ""

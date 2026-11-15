@@ -36,7 +36,7 @@ describe("онбординг AUTH-1: нет мёртвых путей", () => {
                 bot_configured: bot,
               })
               const target = homeTarget(s)
-              expect(["/settings", "/extension", "/jobs"]).toContain(target)
+              expect(["/settings", "/extension", "/chat"]).toContain(target)
               if (!isGateOpen(s)) {
                 // Гейт закрыт → ведём в Параметры, и Параметры точно доступны.
                 expect(target).toBe("/settings")
@@ -65,7 +65,7 @@ describe("онбординг AUTH-1: нет мёртвых путей", () => {
     ).toBe(false)
   })
 
-  it("порядок онбординга: Параметры → Расширение → Вакансии", () => {
+  it("порядок онбординга: Параметры → Расширение → Агент", () => {
     // Статус ещё не загружен → безопасный дефолт.
     expect(homeTarget(undefined)).toBe("/settings")
     // Всё настроено, расширение не подтверждено → шаг «Расширение».
@@ -74,7 +74,7 @@ describe("онбординг AUTH-1: нет мёртвых путей", () => {
         status({ authed: true, auth_token_configured: true, openrouter_key_configured: true }),
       ),
     ).toBe("/extension")
-    // Подтверждено → обычная работа, домашний экран — Вакансии (решение #16).
+    // Подтверждено → обычная работа, домашний экран — Агент (шаг U-0/U-1).
     expect(
       homeTarget(
         status({
@@ -84,7 +84,7 @@ describe("онбординг AUTH-1: нет мёртвых путей", () => {
           extension_confirmed: true,
         }),
       ),
-    ).toBe("/jobs")
+    ).toBe("/chat")
   })
 
   it("кнопка «Расширение установлено» не блокирует: гейт не зависит от extension_confirmed", () => {

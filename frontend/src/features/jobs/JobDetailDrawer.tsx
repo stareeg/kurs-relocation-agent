@@ -66,6 +66,7 @@ import {
   workFormatChip,
 } from "./funnel"
 import { StageChainFull, StageChainPills } from "@/components/job/StageChain"
+import { VacancyConversationPane } from "@/features/chat/VacancyConversationPane"
 import { useUpdateJobApplyFields } from "./use-job-apply-fields"
 import { useDeleteJob } from "./use-delete-job"
 import { usePendingSalaryRefresh } from "./use-jobs"
@@ -126,7 +127,7 @@ function VacancyText({ text, highlight }: { text: string; highlight: string | nu
 
 // V-02: три вкладки дровера. «decision» — открывается по умолчанию (сюда смотрят чаще всего —
 // решить, откликаться ли); «vacancy» и «work» — по клику.
-type DrawerTab = "decision" | "vacancy" | "work"
+type DrawerTab = "decision" | "vacancy" | "work" | "chat"
 
 // V-11: вкладка живёт в sessionStorage вкладки браузера, а не в URL — ссылкой делятся вакансией
 // (`/jobs/:vacancyId`), не выбранной вкладкой (F-10). Ключ хранит vacancyId вместе с вкладкой:
@@ -141,7 +142,7 @@ function readStoredDrawerTab(vacancyId: string): DrawerTab {
     const sep = raw.indexOf(":")
     if (sep < 0 || raw.slice(0, sep) !== vacancyId) return "decision"
     const tab = raw.slice(sep + 1)
-    return tab === "vacancy" || tab === "work" ? tab : "decision"
+    return tab === "vacancy" || tab === "work" || tab === "chat" ? tab : "decision"
   } catch {
     return "decision"
   }
@@ -1035,6 +1036,7 @@ function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: bool
           <TabsList className="w-fit">
             <TabsTrigger value="decision">Решение</TabsTrigger>
             <TabsTrigger value="vacancy">Вакансия</TabsTrigger>
+            <TabsTrigger value="chat">Чат с HR</TabsTrigger>
             <TabsTrigger value="work">
               Действия
               {/* V-08: точка — есть несохранённый черновик письма; state живёт в DrawerBody, а не
@@ -1116,6 +1118,14 @@ function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: bool
         <TabsContent value="work" className="min-h-0 overflow-y-auto p-4">
           <TabWork job={job} />
         </TabsContent>
+        {/* Переписка с HR живёт здесь (шаг U-0/U-1): раньше — раздел «Чаты»; панель — та же,
+            вкладка вместо отдельного экрана.Pane сама держит свою колонку-скролл. */}
+        <TabsContent
+          value="chat"
+          className="min-h-0 flex-1 overflow-hidden p-0 data-[state=active]:flex data-[state=active]:flex-col"
+        >
+          <VacancyConversationPane vacancyId={job.vacancy_id} job={job} />
+        </TabsContent>
       </Tabs>
 
       {/* S12: блок ссылок — та же вакансия на других площадках (дедупликация). */}
@@ -1167,7 +1177,7 @@ function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: bool
           navigate(`${sectionJump.path}?vacancy=${encodeURIComponent(job.vacancy_id)}`)
         }
         hasConversation={hasConversation}
-        onOpenChat={() => navigate(`/chat?vacancy=${encodeURIComponent(job.vacancy_id)}`)}
+        onOpenChat={() => setActiveTab("chat")}
         acted={acted}
         onRevert={onRevert}
         revertPending={job.id == null || stageM.isPending || unskipM.isPending}

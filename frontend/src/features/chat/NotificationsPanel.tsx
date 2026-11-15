@@ -257,7 +257,7 @@ export function NotificationsPanel({ onNavigate }: { onNavigate?: () => void }) 
             {reply.map((t) => (
               <Row
                 key={t.id}
-                onClick={() => go(`/chat?vacancy=${encodeURIComponent(t.vacancy_id)}`)}
+                onClick={() => go(`/jobs/${encodeURIComponent(t.vacancy_id)}`)}
                 onDismiss={() => dismiss("reply", t.vacancy_id)}
                 title={conversationTitle(t)}
                 subtitle={conversationListSubtitle(t) ?? undefined}
@@ -270,7 +270,7 @@ export function NotificationsPanel({ onNavigate }: { onNavigate?: () => void }) 
             {remind.map((t) => (
               <Row
                 key={t.id}
-                onClick={() => go(`/chat?vacancy=${encodeURIComponent(t.vacancy_id)}`)}
+                onClick={() => go(`/jobs/${encodeURIComponent(t.vacancy_id)}`)}
                 onDismiss={() => dismiss("remind", t.vacancy_id)}
                 title={conversationTitle(t)}
                 subtitle={conversationListSubtitle(t) ?? undefined}

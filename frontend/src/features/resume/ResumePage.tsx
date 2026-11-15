@@ -103,8 +103,7 @@ export function ResumePage() {
                       autoHideMs={6000}
                     >
                       <div className="border-b border-sky-100 bg-sky-50/70 px-4 py-2.5 text-sm text-sky-900 lg:px-6">
-                        Сначала критерии поиска и опыт — от них зависит оценка вакансий. Если
-                        застряли — наведите на «Что делать?» внизу меню.
+                        Сначала критерии поиска и опыт — от них зависит оценка вакансий.
                       </div>
                     </OnboardingHint>
                   )}

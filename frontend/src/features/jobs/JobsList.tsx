@@ -236,7 +236,7 @@ export function JobsList({ jobs, onOpen }: { jobs: Job[]; onOpen: (job: Job) => 
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        navigate(`/chat?vacancy=${encodeURIComponent(job.vacancy_id)}`)
+                        navigate(`/jobs/${encodeURIComponent(job.vacancy_id)}`)
                       }}
                       className={cn(
                         "inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors",

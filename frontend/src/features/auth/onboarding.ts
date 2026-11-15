@@ -26,13 +26,14 @@ export function isRouteAllowedWhileGated(pathname: string): boolean {
 
 /**
  * Куда ведёт корень `/`:
- * гейт закрыт → Параметры; расширение не подтверждено → Расширение; иначе → Вакансии
- * (решение #16 — рабочий стол, а не пустой чат при первом входе).
+ * гейт закрыт → Параметры; расширение не подтверждено → Расширение; иначе → Агент
+ * (шаг U-0/U-1 — главный экран, свободный чат с агентом).
  */
 export function homeTarget(s: AuthStatus | undefined): string {
   if (!s || !isGateOpen(s)) return "/settings"
   if (!s.extension_confirmed) return "/extension"
-  return "/jobs"
+  // Агент — главный экран (шаг U-0/U-1): старт всегда отсюда, не с воронки.
+  return "/chat"
 }
 
 /** Форма входа по токену нужна, пока вход не жив вместе с выпущенным токеном. */

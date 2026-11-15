@@ -98,7 +98,7 @@ export function JobCard({
             <p className="mt-0.5 truncate text-xs font-semibold text-slate-900">{job.company}</p>
           )}
           {/* Плотные метаданные карточки без HelpTip: тултипы на скор/бейджи
-              перекрывали соседние кнопки. Пояснения — в «Что делать?». */}
+              перекрывали соседние кнопки. */}
           <span
             className={cn(
               "mt-1 block min-w-0 truncate text-sm",
@@ -202,7 +202,7 @@ export function JobCard({
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
-              navigate(`/chat?vacancy=${encodeURIComponent(job.vacancy_id)}`)
+              navigate(`/jobs/${encodeURIComponent(job.vacancy_id)}`)
             }}
             className={cn(
               "flex items-center justify-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors",

@@ -35,7 +35,6 @@ import type { AuthStatus } from "@/api/auth"
 import { useAuth } from "@/features/auth/auth-context"
 import { useAuthStatusQuery } from "@/features/auth/use-auth-status"
 import { isGateOpen, needsTokenLogin } from "@/features/auth/onboarding"
-import { useActiveConversationsCount } from "@/features/chat/use-conversations"
 import { useActiveJobsCount, useJobStageCounts } from "@/features/jobs/use-jobs"
 import { useResumeData, useResumeGap } from "@/features/resume/use-resume"
 import { useOffers } from "@/features/offers/use-offers"
@@ -47,7 +46,6 @@ import { captureNavBlocked, captureNavClick } from "@/lib/error-capture"
 import { AdminAttentionBadge } from "@/features/admin/components/AdminAttentionBadge"
 import { useImmersive } from "@/features/multiplayer/immersive"
 import { NavNotifications } from "./NavNotifications"
-import { WhatNextButton, WhatNextButtonGated } from "./WhatNextButton"
 
 type NavItem = { to: string; label: string; icon: typeof MessageSquare }
 
@@ -62,7 +60,7 @@ type NavItem = { to: string; label: string; icon: typeof MessageSquare }
 const NAV_GROUPS: ReadonlyArray<ReadonlyArray<NavItem>> = [
   [{ to: "/resume", label: "Резюме", icon: FileText }],
   [
-    { to: "/chat", label: "Чаты", icon: MessageSquare },
+    { to: "/chat", label: "Агент", icon: MessageSquare },
     { to: "/jobs", label: "Вакансии", icon: Kanban },
     { to: "/screening", label: "Скрининги", icon: Headset },
     { to: "/tech", label: "Технички", icon: Code2 },
@@ -441,12 +439,6 @@ function GatedShell({ authStatus }: { authStatus: AuthStatus | undefined }) {
       nav={<OnboardingStepNav authStatus={authStatus} collapsed={navCollapsed} />}
       bottom={
         <>
-          <WhatNextButtonGated
-            collapsed={navCollapsed}
-            hasOpenRouterKey={Boolean(
-              authStatus?.openrouter_key_configured || authStatus?.server_llm_available,
-            )}
-          />
           <DisabledNavItem label="Автоотклики" icon={Puzzle} collapsed={navCollapsed} />
           <SidebarNavLink
             to="/settings"
@@ -481,8 +473,6 @@ function FullShell({ isAdmin }: { isAdmin: boolean }) {
   useLiveEventInvalidation()
   const { data: activeCountData } = useActiveJobsCount()
   const activeCount = activeCountData?.count
-  const { data: activeChatsData } = useActiveConversationsCount()
-  const activeChatsCount = activeChatsData?.count
   const { data: stageCounts } = useJobStageCounts()
   const screeningCount = stageCounts?.["Скрининг"] ?? 0
   const techCount = stageCounts?.["Техничка"] ?? 0
@@ -553,9 +543,6 @@ function FullShell({ isAdmin }: { isAdmin: boolean }) {
                 {!navCollapsed && (
                   <>
                     <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-                    {to === "/chat" && activeChatsCount != null && (
-                      <span className={COUNT_BADGE_CLASS}>{activeChatsCount}</span>
-                    )}
                     {to === "/jobs" && activeCount != null && (
                       <span className={COUNT_BADGE_CLASS}>{activeCount}</span>
                     )}
@@ -619,7 +606,6 @@ function FullShell({ isAdmin }: { isAdmin: boolean }) {
               )}
             </SidebarNavLink>
           )}
-          <WhatNextButton collapsed={navCollapsed} />
           {/* Отдельного пункта «Аккаунт» здесь больше нет: вход в него — клик по своему
               профилю ниже. Две ссылки на один экран в одном рельсе — дубль.
               «Автоотклики» — в основном рельсе (NAV_GROUPS), сразу под «Офферы». */}

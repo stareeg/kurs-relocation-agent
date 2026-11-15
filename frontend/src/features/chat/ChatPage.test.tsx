@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { ChatPage } from "./ChatPage"
@@ -16,77 +16,59 @@ beforeAll(() => {
   }
   Object.assign(globalThis, { ResizeObserver: Observer, IntersectionObserver: Observer })
   Element.prototype.scrollIntoView = () => {}
+  Element.prototype.scrollTo = () => {}
 })
 
 afterEach(cleanup)
 
 beforeEach(() => {
-  // Пустые списки — иначе ChatPage падает без бэкенда.
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      const json = (body: unknown) =>
-        new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      if (url.includes("/api/conversations/attention")) {
-        return json({ reply: [], remind: [], upcoming: [], strong_unapplied: [] })
-      }
-      if (url.includes("/api/conversations/active-count")) {
-        return json({ count: 0 })
-      }
-      if (url.includes("/api/conversations")) {
-        return json({ items: [] })
-      }
-      if (url.includes("/api/jobs")) {
-        return json({ jobs: [], next_cursor: null, column_counts: {} })
-      }
-      if (url.includes("/api/notes")) {
-        return json([])
-      }
-      return json({})
-    }),
+    vi.fn(async () =>
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
   )
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  sessionStorage.clear()
-  localStorage.removeItem("copilot.chat-list.tab")
-  localStorage.removeItem("copilot.chat-list.collapsed")
+  localStorage.clear()
 })
 
-function renderChat() {
+function renderChat(initialEntry = "/chat") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={["/chat"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ChatPage />
       </MemoryRouter>
     </QueryClientProvider>,
   )
 }
 
-describe("ChatPage — раздел «Чаты»", () => {
-  it("по умолчанию показывает пустое состояние, не свободный чат", async () => {
+describe("ChatPage — главный экран «Агент»", () => {
+  it("пустой экран — приветствие и композер свободного чата, без списка диалогов", () => {
     renderChat()
-    await waitFor(() => {
-      expect(screen.getByText("Выберите диалог")).toBeTruthy()
-    })
-    expect(screen.queryByText("Чат копайлота")).toBeNull()
+    expect(screen.getByText("Агент")).toBeTruthy()
+    expect(screen.getByPlaceholderText("Спросите агента…")).toBeTruthy()
+    // Переписка с HR переехала в «Вакансии»: кнопок списков и «контекстов» здесь больше нет.
+    expect(screen.queryByText("Архив")).toBeNull()
+    expect(screen.queryByText("Контексты")).toBeNull()
   })
 
-  it("«Новая вакансия» открывает форму создания с полями друг под другом", async () => {
+  it("история из localStorage рисуется лентой (персист свободного чата)", () => {
+    localStorage.setItem(
+      "copilot.agent-chat.messages",
+      JSON.stringify([
+        { id: "m1", role: "user", content: "Привет", createdAt: 1 },
+        { id: "m2", role: "assistant", content: "Здравствуй", createdAt: 2 },
+      ]),
+    )
     renderChat()
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Новая вакансия/i })).toBeTruthy()
-    })
-    fireEvent.click(screen.getByRole("button", { name: /Новая вакансия/i }))
-    expect(screen.getByPlaceholderText("Компания")).toBeTruthy()
-    expect(screen.getByPlaceholderText("Должность")).toBeTruthy()
-    expect(screen.getByPlaceholderText("Telegram HR — @username или t.me/…")).toBeTruthy()
-    expect(screen.getByRole("button", { name: /Добавить вакансию/i })).toBeTruthy()
+    expect(screen.getByText("Привет")).toBeTruthy()
+    expect(screen.getByText("Здравствуй")).toBeTruthy()
   })
 })

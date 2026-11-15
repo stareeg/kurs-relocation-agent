@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { LayoutGrid, List, RotateCcw, Search, X } from "lucide-react"
+import { LayoutGrid, List, Plus, RotateCcw, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
@@ -18,6 +18,7 @@ import { OnboardingHint } from "@/components/ui/tooltip"
 import { ONBOARDING_HINT_IDS, useOnboardingHints } from "@/lib/use-onboarding-hints"
 import { cn } from "@/lib/utils"
 import { FUNNEL_STAGES } from "./funnel"
+
 import { DateRangeFilter } from "./DateRangeFilter"
 import {
   effectiveJobFilters,
@@ -30,6 +31,7 @@ import { TRACK_LABELS, type JobTrack } from "./use-job-track"
 import type { Job } from "@/api/jobs"
 import { SOURCE_GROUP_LABEL, SOURCE_GROUPS, sourceFilterEligible, type SourceGroup } from "./source"
 import { SourceIcon } from "./SourceIcon"
+import { AddVacancyDialog } from "./AddVacancyDialog"
 import { useAnketaPendingIds, useAutoApplyManualReviewIds } from "@/features/settings/use-settings"
 import { useSearchTrack } from "@/features/career/search-track"
 
@@ -126,6 +128,8 @@ export function JobsToolbar({
   // подстройку состояния во время рендера (паттерн React без эффекта).
   const [draft, setDraft] = useState(filters.search)
   const [lastSearch, setLastSearch] = useState(filters.search)
+  // U-0/U-1: диалог ручного добавления вакансии (форма из старого раздела «Чаты»).
+  const [addOpen, setAddOpen] = useState(false)
   if (filters.search !== lastSearch) {
     setLastSearch(filters.search)
     setDraft(filters.search)
@@ -152,6 +156,7 @@ export function JobsToolbar({
 
   return (
     <div id="screen-start-jobs" className="shrink-0 space-y-3 border-b bg-background px-6 py-3">
+      <AddVacancyDialog open={addOpen} onOpenChange={setAddOpen} />
       {/* Поиск — во всю ширину, заметный, применяется кнопкой/Enter; справа от него — источник,
           сортировка и переключалка вида. Сбросить (когда есть активные фильтры) — фиксированной
           строкой под переключалкой вида, у правого края, а не среди чипов фильтров ниже: так его
@@ -228,6 +233,19 @@ export function JobsToolbar({
             ))}
           </SelectContent>
         </Select>
+
+        {/* Ручное добавление переехало сюда из старого раздела «Чаты» (шаг U-0/U-1): вакансия
+            с перепиской создаётся прямо в разделе Вакансий и открывается дровером. */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-11 shrink-0 gap-1.5 rounded-xl px-3"
+          onClick={() => setAddOpen(true)}
+        >
+          <Plus className="size-4" strokeWidth={2} />
+          Добавить
+        </Button>
 
         <div className="flex h-11 shrink-0 items-center gap-1 rounded-xl border border-slate-200 px-1">
           {/* Подсказка про расширение — только на пустой воронке (иначе назойливо на каждом заходе). */}

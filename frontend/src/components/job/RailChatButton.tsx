@@ -15,7 +15,7 @@ export function RailChatButton({ vacancyId }: { vacancyId: string | null | undef
       className="h-7 gap-1 border-sky-200 bg-sky-50 px-2 text-xs text-sky-700 hover:bg-sky-100"
       aria-label="Открыть чат по вакансии"
       title="Чат по вакансии — переписка с HR и агентом"
-      onClick={() => navigate(`/chat?vacancy=${encodeURIComponent(vacancyId)}`)}
+      onClick={() => navigate(`/jobs/${encodeURIComponent(vacancyId)}`)}
     >
       <MessageSquare className="size-3.5" strokeWidth={2} />
       Чат

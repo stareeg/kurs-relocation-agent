@@ -380,6 +380,14 @@ class OpenRouterChatModel(BaseChatModel):
     # Для детерминированных тестов L-09 (jitter).
     _retry_rng: Any = PrivateAttr(default=None)
 
+    # Фолбэк авторизации: личный ключ аккаунта может быть битой заглушкой (человек вставил
+    # что попало в «Аккаунте»). Тогда первый 401/403 перекидывает модель на серверный
+    # провайдер (LiteLLM перед инференс-ВМ) — один раз за экземпляр, вызов не роняем.
+    _auth_fallback_base_url: Any = PrivateAttr(default="")
+    _auth_fallback_api_key: Any = PrivateAttr(default="")
+    _swapped_base_url: Any = PrivateAttr(default="")
+    _swapped_api_key: Any = PrivateAttr(default="")
+
     @property
     def _llm_type(self) -> str:
         return "openrouter-chat"
@@ -424,9 +432,39 @@ class OpenRouterChatModel(BaseChatModel):
         return super()._should_stream(async_api=async_api, **kwargs)
 
     # --- HTTP + retry (перенос из OpenRouterClient) ---
+    def _active_base_url(self) -> str:
+        """Действующий адрес API: обычный, либо серверный после фолбэка авторизации."""
+        return str(self._swapped_base_url or self.base_url)
+
+    def _active_api_key(self) -> str:
+        """Действующий ключ: личный, либо серверный после фолбэка авторизации."""
+        return str(self._swapped_api_key or self.api_key)
+
+    def _try_swap_auth_fallback(self, *, diag: str) -> bool:
+        """Один раз перекинуться на серверный провайдер, если задан фолбэк авторизации.
+
+        Личный ключ аккаунта с 401/403 — это битая заглушка или отозванный ключ; повторять
+        его бессмысленно. С серверным провайдером (A-0) вызов честно продолжает работу.
+        """
+        if self._swapped_api_key or not self._auth_fallback_api_key:
+            return False
+        self._swapped_base_url = self._auth_fallback_base_url
+        self._swapped_api_key = self._auth_fallback_api_key
+        event(
+            logger,
+            "LLM",
+            "личный ключ отклонён (%s) — продолжаю через серверный провайдер",
+            diag,
+            level=logging.WARNING,
+            tier=self.tier,
+            agent=self.agent,
+            base_url=self._active_base_url(),
+        )
+        return True
+
     def _headers(self) -> dict[str, str]:
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {self._active_api_key()}",
             "Content-Type": "application/json",
         }
         if self.api_style == "openrouter":
@@ -435,7 +473,7 @@ class OpenRouterChatModel(BaseChatModel):
         return headers
 
     def _chat_url(self) -> str:
-        return f"{self.base_url.rstrip('/')}/chat/completions"
+        return f"{self._active_base_url().rstrip('/')}/chat/completions"
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
         # L-07: общий keep-alive клиент; MockTransport в тестах — ephemeral, без singleton.
@@ -512,6 +550,10 @@ class OpenRouterChatModel(BaseChatModel):
                         model=model,
                         level=logging.WARNING,
                     )
+                    continue
+                # Битый личный ключ аккаунта (заглушка/отозван) — один раз уходим на
+                # серверный провайдер, не роняя вызов (повтор личного ключа бессмысленен).
+                if status in (401, 403) and self._try_swap_auth_fallback(diag=diag):
                     continue
                 if status == 429:
                     last_error = OpenRouterRateLimitError(f"HTTP 429 на {model}: {exc}")
@@ -999,6 +1041,11 @@ class OpenRouterChatModel(BaseChatModel):
                             agent=agent,
                         )
                         raise OpenRouterError(f"стрим прерван на {model}: {exc}") from exc
+                    # Битый личный ключ аккаунта — продолжаем через серверный провайдер
+                    # (один раз за экземпляр, тот же приём, что в `_run_with_retry`).
+                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                    if status in (401, 403) and self._try_swap_auth_fallback(diag=str(exc)):
+                        continue
                     # Тот же best-effort, что и в `_run_with_retry`: отключение thinking —
                     # оптимизация, а не требование. Без этого повтора стрим ронял всю цепочку
                     # деградации на модели, которая не разрешает выключать reasoning (Э19.8).
@@ -1243,7 +1290,8 @@ def get_chat_model(
 
     # A-0: аккаунт без своего ключа OpenRouter идёт на серверный провайдер (LiteLLM перед
     # инференс-ВМ). Личный ключ сильнее: человек, вставивший свой, платит им и идёт прямо в
-    # OpenRouter, как раньше. Ключ сервера не выходит из настроек процесса.
+    # OpenRouter, как раньше. Ключ сервера не выходит из настроек процесса. Битая личная
+    # заглушка не роняет вызов: модель знает фолбэк авторизации (401/403 → серверный путь).
     account_scoped = current_account_id() is not None
     account_key = current_account_openrouter_key() if account_scoped else ""
     server_base = str(getattr(settings, "server_llm_base_url", "") or "").strip()
@@ -1340,4 +1388,7 @@ def get_chat_model(
     )
     if usage_sink is not None:
         model._usage_sink = usage_sink
+    if use_personal_key and account_scoped and server_configured:
+        model._auth_fallback_base_url = server_base
+        model._auth_fallback_api_key = server_key
     return model
