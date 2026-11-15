@@ -70,7 +70,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-include = ["core/**/*.py", "api/**/*.py", "bot_app/**/*.py"]
+include = ["core/**/*.py", "api/**/*.py", "bot_app/**/*.py", "agent/**/*.py"]
 # Операторские скрипты и тесты линтуем отдельно/не линтуем. force-exclude в pre-commit
 # заставляет ruff уважать этот список даже при явной передаче файлов хуком.
 extend-exclude = ["tests"]
@@ -168,7 +168,7 @@ typeCheckingMode = "basic"
 pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
-include = ["core", "api", "bot_app"]
+include = ["core", "api", "bot_app", "agent"]
 exclude = ["**/__pycache__", "tests"]
 # Lazy __getattr__ — домены с ленивым импортом используют этот паттерн намеренно,
 # pyright не может резолвить __all__ через __getattr__ (reportUnsupportedDunderAll).
