@@ -17,6 +17,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from core.config import current_account_id
+from core.platform.config.runtime import current_agent_run_id
 from core.platform.db.pool import Executor, get_pool
 
 logger = logging.getLogger(__name__)
@@ -37,12 +38,13 @@ async def insert_usage(
     attempt: int | None = None,
     cache_hit: bool = False,
     account_id: int | None = None,
+    agent_run_id: int | None = None,
     db: Executor | None = None,
 ) -> None:
     executor = db if db is not None else get_pool()
     cols = (
         "agent, model, tokens_in, tokens_out, cost_usd, "
-        "ttfb_ms, total_ms, queue_ms, attempt, cache_hit, account_id, tier"
+        "ttfb_ms, total_ms, queue_ms, attempt, cache_hit, account_id, tier, agent_run_id"
     )
     vals = (
         agent,
@@ -57,17 +59,18 @@ async def insert_usage(
         bool(cache_hit),
         account_id,
         tier,
+        agent_run_id,
     )
     if day is None:
         await executor.execute(
             f"insert into llm_usage ({cols}) "
-            "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
             *vals,
         )
     else:
         await executor.execute(
             f"insert into llm_usage ({cols}, day) "
-            "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+            "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
             *vals,
             day,
         )
@@ -257,6 +260,7 @@ class PostgresUsageSink:
         # контекст создателя (§3.8: LLM-usage должен приписываться аккаунту запроса/фон-задачи,
         # а не последнему, кто установил ContextVar к моменту фактического insert).
         account_id = current_account_id()
+        agent_run_id = current_agent_run_id()  # E-9: сверка токенов запуска с llm_usage
         task = loop.create_task(
             self._safe_insert(
                 agent,
@@ -272,6 +276,7 @@ class PostgresUsageSink:
                 attempt=attempt,
                 cache_hit=cache_hit,
                 account_id=account_id,
+                agent_run_id=agent_run_id,
             )
         )
         self._tasks.add(task)
@@ -293,6 +298,7 @@ class PostgresUsageSink:
         attempt: int | None = None,
         cache_hit: bool = False,
         account_id: int | None = None,
+        agent_run_id: int | None = None,
     ) -> None:
         try:
             await insert_usage(
@@ -309,6 +315,7 @@ class PostgresUsageSink:
                 attempt=attempt,
                 cache_hit=cache_hit,
                 account_id=account_id,
+                agent_run_id=agent_run_id,
                 db=self._pool,
             )
         except Exception as exc:  # учёт не должен ронять LLM-путь

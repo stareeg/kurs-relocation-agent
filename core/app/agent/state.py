@@ -107,6 +107,9 @@ class AgentState(TypedDict):
     model_calls: int
     tokens_in: int
     tokens_out: int
+    # Расход запуска целиком (E-9): токены, цена, разбивка по группам (`RunBudget.snapshot`).
+    # Плоские счётчики выше читают пределы, этот словарь — экран и итог в `agent_runs.usage`.
+    usage: NotRequired[dict[str, Any]]
     failure_streak: int  # подряд идущие шаги с ошибкой
 
     # Итог

@@ -132,9 +132,7 @@ def step_node(
             "observations": [*(state.get("observations") or []), observation],
             "vacancies": [*(state.get("vacancies") or []), *recorder.vacancies],
             "pending_action": pending,
-            "model_calls": budget.calls,
-            "tokens_in": budget.tokens_in,
-            "tokens_out": budget.tokens_out,
+            **budget.state_update(),
         }
 
     return _step

@@ -49,6 +49,9 @@ class LlmSettings(BaseModel):
     model_prices: dict[str, dict[str, float]] = {}
     default_price_input_per_1m: float = 0.5
     default_price_output_per_1m: float = 1.5
+    # Модели своей ВМ (E-9): за их токены никто не платит, цена в `MODEL_PRICES` для них —
+    # условная, по прайсу OpenRouter. Экран агента показывает её отдельно от реальных трат.
+    self_hosted_models: list[str] = []
 
     # Потолок размера одного LLM-запроса (символов); 0 = выключено.
     llm_max_input_chars: int = 800_000

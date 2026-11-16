@@ -67,6 +67,7 @@ def run_out(record: Any) -> AgentRunOut:
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        usage=dict(record.usage or {}),
     )
 
 

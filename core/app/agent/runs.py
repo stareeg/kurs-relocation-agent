@@ -25,10 +25,12 @@ from typing import Any, Protocol
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from core.app.agent.budget import RunBudget, put_budget
+from core.app.agent.budget import RunBudget, budget_from, put_budget, run_limits_payload
 from core.app.agent.events import AgentEvent
 from core.app.agent.graph import AgentDeps, build_agent_graph, cancelled_answer, default_deps
+from core.app.agent.state import RunLimits
 from core.kernel.errors import InvalidInput, NotFound
+from core.platform.config.runtime import reset_current_agent_run_id, set_current_agent_run_id
 from core.platform.repo import agent_runs as runs_repo
 from core.platform.repo.agent_runs import AgentEventRecord, AgentRunRecord
 
@@ -56,6 +58,7 @@ class RunsStore(Protocol):
         stop_reason: str | None = None,
         answer: str | None = None,
         error: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> AgentRunRecord | None: ...
 
     async def append_event(
@@ -96,6 +99,7 @@ class PgRunsStore:
         stop_reason: str | None = None,
         answer: str | None = None,
         error: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> AgentRunRecord | None:
         return await runs_repo.update_run(
             run_id,
@@ -104,6 +108,7 @@ class PgRunsStore:
             stop_reason=stop_reason,
             answer=answer,
             error=error,
+            usage=usage,
         )
 
     async def append_event(
@@ -383,6 +388,9 @@ class AgentRunsManager:
         budget: RunBudget | None = None
         graph: Any = None
         config: RunnableConfig | None = None
+        # E-9: вызовы модели этой задачи (граф, шаг, инструменты) пишутся в llm_usage с id
+        # запуска — по нему сумма токенов запуска сверяется с независимым журналом вызовов.
+        attribution = set_current_agent_run_id(live.run_id)
         try:
             deps = await self._deps_factory(live.account_id)
             deps.observer = pump  # наблюдатель протокола RunObserver: узлы зовут pump.emit
@@ -400,6 +408,7 @@ class AgentRunsManager:
                         payload={
                             "goal": live.goal,
                             "auto_confirm": bool(initial.get("auto_confirm")),
+                            "limits": run_limits_payload(deps.limits),
                         },
                     )
                 )
@@ -419,7 +428,10 @@ class AgentRunsManager:
                 value = getattr(interrupts[0], "value", None)
                 card = value if isinstance(value, dict) else {}
                 await self._store.update_run(
-                    live.run_id, account_id=live.account_id, status="waiting_approval"
+                    live.run_id,
+                    account_id=live.account_id,
+                    status="waiting_approval",
+                    usage=budget.snapshot(),
                 )
                 live.status = "waiting_approval"
                 pump.emit(AgentEvent(type="needs_confirmation", payload={"card": card or {}}))
@@ -439,12 +451,14 @@ class AgentRunsManager:
                 )
                 payload = Command(resume=decision)
             answer = final.get("answer")
+            usage = budget.snapshot()
             await self._store.update_run(
                 live.run_id,
                 account_id=live.account_id,
                 status="done",
                 stop_reason=final.get("stop_reason"),
                 answer=answer,
+                usage=usage,
             )
             live.status = "done"
             pump.emit(
@@ -456,6 +470,7 @@ class AgentRunsManager:
                         "plan": [s.model_dump() for s in final.get("plan") or []],
                         "steps_taken": final.get("steps_taken"),
                         "pending_action": final.get("pending_action"),
+                        "usage": usage,
                     },
                 )
             )
@@ -469,14 +484,23 @@ class AgentRunsManager:
         except Exception as exc:  # noqa: BLE001 — падение задачи это failed в базе, не 500 в лог
             logger.exception("запуск run=%s упал: %s", live.run_id, exc)
             live.status = "failed"
+            usage = budget.snapshot() if budget is not None else None
             try:
                 await self._store.update_run(
-                    live.run_id, account_id=live.account_id, status="failed", error=str(exc)
+                    live.run_id,
+                    account_id=live.account_id,
+                    status="failed",
+                    error=str(exc),
+                    usage=usage,
                 )
-                pump.emit(AgentEvent(type="failed", payload={"error": str(exc)}))
+                failed: dict[str, Any] = {"error": str(exc)}
+                if usage is not None:
+                    failed["usage"] = usage
+                pump.emit(AgentEvent(type="failed", payload=failed))
             except Exception:  # noqa: BLE001 — база может быть недоступна в этот момент
                 logger.exception("запуск run=%s: не записал failed в базу", live.run_id)
         finally:
+            reset_current_agent_run_id(attribution)
             await pump.close()
             self._live.pop(live.run_id, None)
 
@@ -532,6 +556,13 @@ class AgentRunsManager:
             except Exception:  # noqa: BLE001 — нет чекпойнта: итог без сделанных шагов
                 logger.warning("запуск run=%s: нет чекпойнта для итога отмены", live.run_id)
         answer = cancelled_answer(values)
+        # Живой бюджет видит и вызовы после последнего чекпойнта (шаг, прерванный «Стопом»);
+        # без живой задачи (пауза пережила рестарт) расход берётся из чекпойнта.
+        budget = budget_from(config)
+        if not budget.counting:
+            budget = RunBudget(RunLimits())
+            budget.restore(values)
+        usage = budget.snapshot()
         live.status = "cancelled"
         await self._store.update_run(
             live.run_id,
@@ -539,6 +570,7 @@ class AgentRunsManager:
             status="cancelled",
             stop_reason="cancelled",
             answer=answer,
+            usage=usage,
         )
         pump.emit(
             AgentEvent(
@@ -547,6 +579,7 @@ class AgentRunsManager:
                     "answer": answer,
                     "stop_reason": "cancelled",
                     "steps_taken": values.get("steps_taken"),
+                    "usage": usage,
                 },
             )
         )
@@ -558,9 +591,7 @@ class AgentRunsManager:
             values = snapshot.values or {}
         except Exception:  # noqa: BLE001 — нет чекпойнта: бюджет с нуля (пауза не продолжится)
             return
-        budget.calls = int(values.get("model_calls") or 0)
-        budget.tokens_in = int(values.get("tokens_in") or 0)
-        budget.tokens_out = int(values.get("tokens_out") or 0)
+        budget.restore(values)
 
 
 _MANAGER: AgentRunsManager | None = None

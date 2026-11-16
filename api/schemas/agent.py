@@ -27,6 +27,8 @@ class AgentRunOut(BaseModel):
     error: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Расход запуска (E-9): вызовы модели, токены, цена, разбивка и пределы; {} — нет данных.
+    usage: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentRunList(BaseModel):

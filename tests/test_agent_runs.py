@@ -65,6 +65,7 @@ class InMemoryRunsStore:
         stop_reason: str | None = None,
         answer: str | None = None,
         error: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> AgentRunRecord | None:
         record = self.runs.get(run_id)
         if record is None or record.account_id != account_id:
@@ -75,6 +76,7 @@ class InMemoryRunsStore:
             ("stop_reason", stop_reason),
             ("answer", answer),
             ("error", error),
+            ("usage", usage),
         ):
             if value is not None:
                 updates[name] = value

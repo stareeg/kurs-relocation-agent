@@ -84,3 +84,21 @@ export function formatVacancyEventAt(value?: string | null): string {
   if (!day || !month || !hour || !minute) return ""
   return `${day}:${month} ${hour}:${minute}`
 }
+
+/**
+ * Цена LLM-вызовов в долларах (E-9). Запуск агента стоит доли цента, поэтому мелкие суммы
+ * показываются с четырьмя знаками («$0.0042»), а не округляются до «$0.00».
+ * Разделитель — точка, как у сумм в админке (`features/admin/admin-format.ts`).
+ */
+export function formatUsd(value?: number | null): string {
+  const n = value ?? 0
+  if (n === 0) return "$0"
+  if (n < 0.0001) return "<$0.0001"
+  if (n < 1) return `$${n.toFixed(4)}`
+  return `$${n.toFixed(2)}`
+}
+
+/** Число токенов с разрядами: «52 300». */
+export function formatTokens(value?: number | null): string {
+  return Math.round(value ?? 0).toLocaleString("ru-RU")
+}

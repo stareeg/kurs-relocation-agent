@@ -39,6 +39,37 @@ export type AgentRun = {
   error: string | null
   created_at: string | null
   updated_at: string | null
+  /** Расход запуска (E-9); `{}` — запуск до учёта токенов или ещё без записи. */
+  usage?: AgentRunUsage | Record<string, never>
+}
+
+/** Кто тратит вызовы модели: узлы агента, субагенты, судья, LLM внутри инструментов. */
+export type AgentUsageGroup = "agent" | "subagents" | "judge" | "tools"
+
+export type AgentUsageBucket = {
+  calls: number
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number
+}
+
+/** Снимок `RunBudget.snapshot()`: в `node_timing`, терминальных событиях и строке запуска. */
+export type AgentRunUsage = {
+  model_calls: number
+  tokens_in: number
+  tokens_out: number
+  /** Цена всего: реальная цена OpenRouter + условная цена моделей своей ВМ. */
+  cost_usd: number
+  /** Из неё условная: модели своей ВМ (GLM) по прайсу OpenRouter, это никто не платит. */
+  cost_self_hosted_usd: number
+  by_group: Partial<Record<AgentUsageGroup, AgentUsageBucket>>
+}
+
+/** Пределы запуска из `run_started` (E-9: «шаги N из 8», «вызовы модели N из 40»). */
+export type AgentRunLimits = {
+  max_steps: number
+  max_model_calls: number
+  max_tokens: number
 }
 
 export type AgentEvent = {

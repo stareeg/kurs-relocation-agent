@@ -100,6 +100,32 @@ def current_account_id() -> int | None:
     return _current_account_id.get()
 
 
+# --- Запуск агента, которому приписываются LLM-вызовы (E-9) ---
+
+_current_agent_run_id: ContextVar[int | None] = ContextVar("current_agent_run_id", default=None)
+
+
+def set_current_agent_run_id(run_id: int | None) -> Token[int | None]:
+    """Приписать LLM-вызовы текущей задачи запуску агента: `llm_usage.agent_run_id`.
+
+    Ставит менеджер запусков в начале задачи запуска; дочерние задачи графа и инструментов
+    наследуют контекст. По этой колонке токены запуска сверяются с `llm_usage` (E-9).
+    """
+    return _current_agent_run_id.set(run_id)
+
+
+def reset_current_agent_run_id(token: Token[int | None]) -> None:
+    try:
+        _current_agent_run_id.reset(token)
+    except ValueError:  # другой Context (задача уже завершается) — откатывать нечего
+        return
+
+
+def current_agent_run_id() -> int | None:
+    """id запуска агента, внутри которого идёт LLM-вызов, либо `None` вне запуска."""
+    return _current_agent_run_id.get()
+
+
 def cache_account_openrouter_key(account_id: int, key: str | None) -> None:
     """Положить (или обновить) закэшированный ключ аккаунта — зовёт
     `core.platform.repo.settings.prime_runtime_openrouter_key_for_account` после

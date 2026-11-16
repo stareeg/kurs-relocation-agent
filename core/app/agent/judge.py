@@ -253,9 +253,7 @@ def judge_node(
                 level="final", verdict=verdict, reason=reason, quote_failures=tuple(failures)
             ).as_dict(),
             "reworks_used": reworks,
-            "model_calls": budget.calls,
-            "tokens_in": budget.tokens_in,
-            "tokens_out": budget.tokens_out,
+            **budget.state_update(),
         }
         if verdict == "fail":
             if reworks + 1 <= limits.max_judge_reworks:

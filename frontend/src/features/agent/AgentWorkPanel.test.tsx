@@ -106,6 +106,39 @@ describe("AgentWorkPanel", () => {
     expect(screen.getByText(/Агент пока не запоминает факты/)).toBeTruthy()
   })
 
+  it("расход: шаги, вызовы и токены из пределов, цена с условной частью GLM", () => {
+    const withUsage: RunView = {
+      ...view,
+      limits: { max_steps: 8, max_model_calls: 40, max_tokens: 200_000 },
+      usage: {
+        model_calls: 17,
+        tokens_in: 48_100,
+        tokens_out: 4_200,
+        cost_usd: 0.0042,
+        cost_self_hosted_usd: 0.0024,
+        by_group: {
+          agent: { calls: 11, tokens_in: 40_000, tokens_out: 3_500, cost_usd: 0.0024 },
+          judge: { calls: 4, tokens_in: 6_100, tokens_out: 500, cost_usd: 0.0018 },
+          tools: { calls: 2, tokens_in: 2_000, tokens_out: 200, cost_usd: 0 },
+        },
+      },
+    }
+    render(<AgentWorkPanel view={withUsage} vacancies={vacancies} />)
+    expect(screen.getByLabelText("Шаги: 2 из 8")).toBeTruthy()
+    expect(screen.getByLabelText("Вызовы модели: 17 из 40")).toBeTruthy()
+    expect(screen.getByLabelText(/^Токены: 52\s300 из 200\s000$/)).toBeTruthy()
+    expect(screen.getByText(/вход 48\s100 · выход 4\s200/)).toBeTruthy()
+    expect(screen.getAllByText("$0.0042").length).toBeGreaterThan(0)
+    expect(screen.getByText(/Из неё \$0\.0024 условно: GLM работает на нашей ВМ/)).toBeTruthy()
+    expect(screen.getByText(/Оплачено в OpenRouter: \$0\.0018/)).toBeTruthy()
+    expect(screen.getByText("судья 4")).toBeTruthy()
+  })
+
+  it("запуск до учёта расхода: честное «не записаны», цена — тире", () => {
+    render(<AgentWorkPanel view={view} vacancies={vacancies} />)
+    expect(screen.getByText(/Токены и цена этого запуска не записаны/)).toBeTruthy()
+  })
+
   it("без запуска — пустое состояние, секции с нулём; свернуть панель", () => {
     const onClose = vi.fn()
     render(<AgentWorkPanel view={null} onClose={onClose} />)

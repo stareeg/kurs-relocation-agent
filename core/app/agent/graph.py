@@ -156,9 +156,7 @@ def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None 
             return {
                 "failure_streak": state.get("failure_streak", 0) + 1,
                 "step_verdict": verdict.as_dict(),
-                "model_calls": budget.calls,
-                "tokens_in": budget.tokens_in,
-                "tokens_out": budget.tokens_out,
+                **budget.state_update(),
             }
         step = next((s for s in plan if s.id == last.step_id), None)
         if step is not None and judge is not None and not budget.over_budget():
@@ -188,9 +186,7 @@ def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None 
             return {
                 "failure_streak": state.get("failure_streak", 0) + 1,
                 "step_verdict": verdict.as_dict(),
-                "model_calls": budget.calls,
-                "tokens_in": budget.tokens_in,
-                "tokens_out": budget.tokens_out,
+                **budget.state_update(),
             }
         evidence = last.answer or "; ".join(last.summaries) or ""
         plan = [
@@ -205,9 +201,7 @@ def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None 
             "plan": plan,
             "failure_streak": 0,
             "step_verdict": verdict.as_dict(),
-            "model_calls": budget.calls,
-            "tokens_in": budget.tokens_in,
-            "tokens_out": budget.tokens_out,
+            **budget.state_update(),
         }
 
     return _check
@@ -587,6 +581,12 @@ def _after_node_event(
         )
 
 
+def _usage_of(config: RunnableConfig | None) -> dict[str, Any] | None:
+    """Снимок расхода для события узла (E-9); без бюджета в конфиге — ничего."""
+    budget = budget_from(config)
+    return budget.snapshot() if budget.counting else None
+
+
 def _observed_node(name: str, fn: Any, observer: RunObserver | None) -> Any:
     """Обернуть узел: таймер узла (OQ-29) и события входа/выхода, если есть наблюдатель.
 
@@ -625,10 +625,17 @@ def _observed_node(name: str, fn: Any, observer: RunObserver | None) -> Any:
             if inspect.isawaitable(out):
                 out = await out
         except GraphInterrupt:
-            observer.emit(node_event(name, (time.perf_counter() - started) * 1000, paused=True))
+            observer.emit(
+                node_event(
+                    name,
+                    (time.perf_counter() - started) * 1000,
+                    paused=True,
+                    usage=_usage_of(config),
+                )
+            )
             raise
         elapsed_ms = (time.perf_counter() - started) * 1000
-        observer.emit(node_event(name, elapsed_ms))
+        observer.emit(node_event(name, elapsed_ms, usage=_usage_of(config)))
         if isinstance(out, dict):
             _after_node_event(name, state, out, observer)
         return out

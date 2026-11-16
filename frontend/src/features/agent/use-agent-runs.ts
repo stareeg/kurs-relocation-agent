@@ -11,8 +11,11 @@ import {
   type AgentApprovalEdits,
   type AgentEvent,
   type AgentRun,
+  type AgentRunLimits,
   type AgentRunStatus,
+  type AgentRunUsage,
 } from "@/api/agent"
+import { parseLimits, parseUsage } from "./run-usage"
 
 // Запуски агента в главном чате (A-3): бэкенд живёт фоновой задачей, фронт читает
 // события по SSE (догон + live) и умеет паузу/подтверждение. Восстановление экрана
@@ -46,6 +49,10 @@ export type RunView = {
   pendingRebuildReason: string | null
   events: AgentEvent[]
   live: boolean
+  /** Последний снимок расхода (E-9): из событий, иначе из строки запуска. */
+  usage?: AgentRunUsage | null
+  /** Пределы запуска из `run_started` (E-9); у запусков до учёта токенов — нет. */
+  limits?: AgentRunLimits | null
 }
 
 const TERMINAL: AgentRunStatus[] = ["done", "failed", "cancelled"]
@@ -87,9 +94,13 @@ function foldEvent(view: RunView, ev: AgentEvent): RunView {
     events: [...view.events.slice(-(VISIBLE_EVENT_CAP - 1)), ev],
   }
   const payload = ev.payload
+  // Расход (E-9) едет снимком в `node_timing` и терминальных событиях: берём последний.
+  const usage = parseUsage(payload.usage)
+  if (usage) next.usage = usage
   switch (ev.type) {
     case "run_started":
       next.status = "running"
+      next.limits = parseLimits(payload.limits) ?? next.limits ?? null
       break
     case "plan_created": {
       next.plan = Array.isArray(payload.plan) ? (payload.plan as RunPlanItem[]) : next.plan
@@ -150,7 +161,8 @@ function foldEvent(view: RunView, ev: AgentEvent): RunView {
   return next
 }
 
-function foldAll(run: AgentRun, events: AgentEvent[]): RunView {
+/** Запуск + его события → вид экрана (восстановление после перезагрузки, тесты свёртки). */
+export function foldAll(run: AgentRun, events: AgentEvent[]): RunView {
   let view: RunView = {
     run,
     createdAtMs: run.created_at ? Date.parse(run.created_at) : Date.now(),
@@ -164,6 +176,8 @@ function foldAll(run: AgentRun, events: AgentEvent[]): RunView {
     pendingRebuildReason: null,
     events: [],
     live: !TERMINAL.includes(run.status),
+    usage: parseUsage(run.usage),
+    limits: null,
   }
   for (const ev of events) view = foldEvent(view, ev)
   // Статус из базы точнее фолда: терминальный run останется терминальным даже

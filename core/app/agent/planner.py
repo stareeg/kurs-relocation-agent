@@ -95,17 +95,13 @@ def planner_node(model: BaseChatModel, limits: RunLimits) -> Any:
             return {
                 "error": f"планировщик: {exc}",
                 "stop_reason": "model_error",
-                "model_calls": budget.calls,
-                "tokens_in": budget.tokens_in,
-                "tokens_out": budget.tokens_out,
+                **budget.state_update(),
             }
         budget = budget_from(config)
         return {
             "plan": clamp_plan_steps(spec, limits),
             "note": spec.note,
-            "model_calls": budget.calls,
-            "tokens_in": budget.tokens_in,
-            "tokens_out": budget.tokens_out,
+            **budget.state_update(),
         }
 
     return _planner

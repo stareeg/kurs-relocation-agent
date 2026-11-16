@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from "react"
+import { Fragment, useState, type ReactNode } from "react"
 import { AlertTriangle, Check, ChevronRight, PanelRightClose } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { scoreTone } from "@/features/jobs/funnel"
+import { formatTokens, formatUsd } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { RunView } from "./use-agent-runs"
+import { runBudget, type RunBudgetView } from "./run-usage"
 import { Plan, PlanChanges, RunLog } from "./run-parts"
 import {
   STATUS,
@@ -22,8 +24,8 @@ import { useNow } from "./use-now"
 
 // Правая панель «Ход работы» (U-5, раскладка Claude Cowork): подробности выбранного запуска —
 // план с прогрессом и снятыми шагами, вакансии запуска с баллом, вызовы по инструментам с
-// ошибками, память агента (с M-1) и полный журнал событий. В ленте остаётся только
-// компактная карточка. Пустые секции показываются с нулём, а не прячутся.
+// ошибками, расход против пределов (E-9), память агента (с M-1) и полный журнал событий.
+// В ленте остаётся только компактная карточка. Пустые секции показываются с нулём, а не прячутся.
 
 function PanelSection({
   title,
@@ -126,6 +128,75 @@ function ToolRow({ stat }: { stat: ToolStat }) {
   )
 }
 
+function BudgetSection({ budget }: { budget: RunBudgetView }) {
+  return (
+    <div className="space-y-3">
+      <dl className="space-y-2.5">
+        {budget.meters.map((m) => {
+          const value = m.key === "tokens" ? formatTokens(m.used) : String(m.used)
+          const limit = m.limit != null ? (m.key === "tokens" ? formatTokens(m.limit) : String(m.limit)) : null
+          return (
+            <div key={m.key} className="space-y-1">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <dt className={cn("text-muted-foreground", m.hit && "text-status-warn-fg")}>{m.label}</dt>
+                <dd className={cn("tabular-nums text-foreground", m.hit && "text-status-warn-fg")}>
+                  {value}
+                  {limit ? <span className="text-muted-foreground"> из {limit}</span> : null}
+                </dd>
+              </div>
+              {m.limit != null ? (
+                <Progress
+                  value={m.pct}
+                  aria-label={`${m.label}: ${value} из ${limit}`}
+                  className="h-1"
+                  indicatorClassName={m.hit ? "bg-status-warn-fg" : undefined}
+                />
+              ) : null}
+              {m.key === "tokens" && budget.recorded ? (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  вход {formatTokens(budget.tokensIn)} · выход {formatTokens(budget.tokensOut)}
+                </p>
+              ) : null}
+            </div>
+          )
+        })}
+        <div className="space-y-1">
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <dt className="text-muted-foreground">Цена</dt>
+            <dd className="tabular-nums text-foreground">{budget.recorded ? formatUsd(budget.cost) : "—"}</dd>
+          </div>
+          {budget.costSelfHosted > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Из неё {formatUsd(budget.costSelfHosted)} условно: GLM работает на нашей ВМ, цена по
+              прайсу OpenRouter.
+              {budget.costPaid > 0 ? ` Оплачено в OpenRouter: ${formatUsd(budget.costPaid)}.` : null}
+            </p>
+          ) : budget.cost > 0 ? (
+            <p className="text-xs text-muted-foreground">Оплачено в OpenRouter.</p>
+          ) : null}
+        </div>
+      </dl>
+      {budget.recorded ? (
+        <p className="text-xs text-muted-foreground tabular-nums">
+          Вызовы модели:{" "}
+          {budget.groups.map((g, i) => (
+            <Fragment key={g.key}>
+              {i > 0 ? " · " : null}
+              <span title={g.hint}>
+                {g.label} {g.calls}
+              </span>
+            </Fragment>
+          ))}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Токены и цена этого запуска не записаны: он прошёл до учёта расхода.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function AgentWorkPanel({
   view,
   runIndex,
@@ -147,6 +218,14 @@ export function AgentWorkPanel({
   const summary = summarize(view?.events ?? [])
   const progress = planProgress(view?.plan ?? null, summary.currentStepId, !terminal)
   const items = view ? runVacancies(view, summary, vacancies) : []
+  const budget = view
+    ? runBudget({
+        usage: view.usage ?? null,
+        limits: view.limits ?? null,
+        stepsTaken: summary.stepsTaken,
+        stopReason: view.run.stop_reason,
+      })
+    : null
 
   let meta = ""
   if (view) {
@@ -302,6 +381,14 @@ export function AgentWorkPanel({
           ) : (
             <Empty>Вызовов инструментов пока нет.</Empty>
           )}
+        </PanelSection>
+
+        <PanelSection
+          title="Расход"
+          count={budget?.recorded ? formatUsd(budget.cost) : "—"}
+          countTone={budget?.meters.some((m) => m.hit) ? "text-status-warn-fg" : undefined}
+        >
+          {budget ? <BudgetSection budget={budget} /> : <Empty>Запусков пока нет.</Empty>}
         </PanelSection>
 
         <PanelSection title="Память" count={0}>

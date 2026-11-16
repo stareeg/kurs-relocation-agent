@@ -87,9 +87,7 @@ def replan_node(model: BaseChatModel) -> Any:
             return {
                 "error": f"перестройка: {exc}",
                 "stop_reason": "model_error",
-                "model_calls": budget.calls,
-                "tokens_in": budget.tokens_in,
-                "tokens_out": budget.tokens_out,
+                **budget.state_update(),
             }
         budget = budget_from(config)
         # Предел перестроек считает только реальные правки плана: решение «continue»
@@ -99,9 +97,7 @@ def replan_node(model: BaseChatModel) -> Any:
             "replan_action": spec.action,
             "replan_reason": spec.reason,
             "replans_used": state.get("replans_used", 0) + rebuilds,
-            "model_calls": budget.calls,
-            "tokens_in": budget.tokens_in,
-            "tokens_out": budget.tokens_out,
+            **budget.state_update(),
         }
         if spec.action == "rebuild":
             return {**base, "note": spec.reason}

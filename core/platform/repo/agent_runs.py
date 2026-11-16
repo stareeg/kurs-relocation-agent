@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from core.platform.db.account_scope import account_scope
@@ -25,7 +25,7 @@ OPEN_STATUSES = ("queued", "running", "waiting_approval")
 
 _RUN_COLUMNS = (
     "id, account_id, session_id, goal, status, thread_id, stop_reason, answer, error,"
-    " created_at, updated_at"
+    " usage, created_at, updated_at"
 )
 
 
@@ -44,6 +44,7 @@ class AgentRunRecord:
     error: str | None = None
     created_at: Any = None
     updated_at: Any = None
+    usage: dict[str, Any] = field(default_factory=dict)  # расход запуска (E-9)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +76,7 @@ def _run_from_row(row: Any) -> AgentRunRecord | None:
         error=data.get("error"),
         created_at=data.get("created_at"),
         updated_at=data.get("updated_at"),
+        usage=dict(data.get("usage") or {}),
     )
 
 
@@ -153,6 +155,7 @@ async def update_run(
     stop_reason: str | None = None,
     answer: str | None = None,
     error: str | None = None,
+    usage: dict[str, Any] | None = None,
     db: Executor | None = None,
 ) -> AgentRunRecord | None:
     """Патч полей запуска; `updated_at` трогается всегда. None-аргументы не меняются."""
@@ -163,6 +166,7 @@ async def update_run(
         ("stop_reason", stop_reason),
         ("answer", answer),
         ("error", error),
+        ("usage", usage),
     ):
         if value is not None:
             values.append(value)

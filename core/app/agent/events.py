@@ -4,6 +4,8 @@
 строит ход работы по событиям без опроса, а таймеры узлов (`node_timing`) дают
 метрику p90 шага (OQ-29, порог 60 с). `judge_verdict` (A-5) — вердикт судьи:
 самопроверка шага (level=step) и проверка итога (level=final), `{verdict, reason}`.
+Расход (E-9): `run_started` несёт пределы (`limits`), `node_timing` и терминальные
+события — снимок `usage` (вызовы модели, токены, цена, разбивка по группам).
 
 Наблюдатель — синхронный колбэк `emit`: узлы графа вызывают его из одного event loop,
 а менеджер запуска (`runs.py`) перекладывает события в хранилище и подписчикам SSE.
@@ -53,11 +55,24 @@ class RunObserver(Protocol):
     def emit(self, event: AgentEvent) -> None: ...
 
 
-def node_event(node: str, duration_ms: float, *, paused: bool = False) -> AgentEvent:
-    """Таймер узла для метрики p90 (OQ-29): узел целиком, не только вызов модели."""
+def node_event(
+    node: str,
+    duration_ms: float,
+    *,
+    paused: bool = False,
+    usage: dict[str, Any] | None = None,
+) -> AgentEvent:
+    """Таймер узла для метрики p90 (OQ-29): узел целиком, не только вызов модели.
+
+    `usage` (E-9) — расход запуска на конец узла (`RunBudget.snapshot`): экран берёт
+    последний снимок, разница соседних снимков — расход одного узла.
+    """
+    payload: dict[str, Any] = {"node": node, "paused": paused}
+    if usage is not None:
+        payload["usage"] = usage
     return AgentEvent(
         type="node_timing",
-        payload={"node": node, "paused": paused},
+        payload=payload,
         node=node,
         duration_ms=round(duration_ms, 1),
     )

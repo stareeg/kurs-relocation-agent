@@ -1,0 +1,43 @@
+{
+  "source": "https://openrouter.ai/api/v1/models",
+  "fetched": "2026-11-16",
+  "unit": "USD per token (OpenRouter pricing.prompt / pricing.completion)",
+  "models": {
+    "z-ai/glm-5.3-flash": {
+      "prompt": "0.0000000399",
+      "completion": "0.0000000784",
+      "input_cache_read": "0.00000003",
+      "per_1m": {
+        "input": 0.0399,
+        "output": 0.0784
+      }
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "prompt": "0.00000014",
+      "completion": "0.00000042",
+      "input_cache_read": "0.0000000042",
+      "per_1m": {
+        "input": 0.14,
+        "output": 0.42
+      }
+    },
+    "google/gemini-3.7-flash": {
+      "prompt": "0.00000075",
+      "completion": "0.00000375",
+      "input_cache_read": "0.000000075",
+      "per_1m": {
+        "input": 0.75,
+        "output": 3.75
+      }
+    },
+    "openai/gpt-5.6-luna": {
+      "prompt": "0.0000002",
+      "completion": "0.0000012",
+      "input_cache_read": "0.00000002",
+      "per_1m": {
+        "input": 0.2,
+        "output": 1.2
+      }
+    }
+  }
+}
