@@ -210,6 +210,11 @@ export function AgentWorkPanel({
             <p className="line-clamp-3 text-sm text-foreground" title={view.run.goal}>
               {view.run.goal}
             </p>
+            {summary.understanding ? (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Как понял цель:</span> {summary.understanding}
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="border-b border-border px-4 py-3">

@@ -41,7 +41,7 @@ const view: RunView = {
   ],
   pendingRebuildReason: null,
   events: [
-    ev(1, "plan_created", {}),
+    ev(1, "plan_created", { note: "проверить вакансию, при отсутствии — найти замену" }),
     ev(2, "step_started", { index: 1, step_id: "s1", title: "Прочитать условия no-such-job" }),
     ev(3, "tool_called", {
       step_id: "s1",
@@ -78,6 +78,7 @@ describe("AgentWorkPanel", () => {
     render(<AgentWorkPanel view={view} vacancies={vacancies} runIndex={2} runCount={2} />)
     expect(screen.getByText("2 из 2")).toBeTruthy()
     expect(screen.getByText(/запуск 2 из 2/)).toBeTruthy()
+    expect(screen.getByText(/при отсутствии — найти замену/)).toBeTruthy()
     expect(screen.getByText(/Откликнуться сразу \(снят\)/)).toBeTruthy()
     expect(screen.getByText(/вакансии нет в базе/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /Прочитать условия no-such-job/ }))

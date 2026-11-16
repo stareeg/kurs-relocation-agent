@@ -288,6 +288,8 @@ export type RunSummary = {
   autoActions: { id: number; action: string; params: Record<string, unknown> }[]
   /** Запуск стартовал в режиме «подтверждать автоматически». */
   autoConfirm: boolean
+  /** Как планировщик понял цель (`note` первого `plan_created`). */
+  understanding: string | null
 }
 
 const SCORE_RE = /"vacancy_id":\s*"([^"]+)",\s*"overall_score":\s*(-?\d+(?:\.\d+)?)/
@@ -300,6 +302,7 @@ export function summarize(events: AgentEvent[]): RunSummary {
   const mentionParts: string[] = []
   const autoActions: RunSummary["autoActions"] = []
   let autoConfirm = false
+  let understanding: string | null = null
   let actions = 0
   let stepsTaken = 0
   let toolErrors = 0
@@ -309,6 +312,9 @@ export function summarize(events: AgentEvent[]): RunSummary {
   for (const ev of events) {
     const p = ev.payload
     if (ev.type === "run_started" && p.auto_confirm === true) autoConfirm = true
+    if (ev.type === "plan_created" && understanding == null && typeof p.note === "string" && p.note.trim()) {
+      understanding = p.note.trim()
+    }
     if (ev.type === "step_started") {
       stepsTaken += 1
       currentStepId = String(p.step_id ?? "")
@@ -383,6 +389,7 @@ export function summarize(events: AgentEvent[]): RunSummary {
     mentions: mentionParts.join("\n"),
     autoActions,
     autoConfirm,
+    understanding,
   }
 }
 
