@@ -70,6 +70,7 @@ class AgentState(TypedDict):
     # План и его история
     plan: list[PlanStep]
     plan_changes: list[dict[str, Any]]  # «было/стало» после перестроек (для экрана A-4)
+    replan_reason: str | None  # причина последнего решения перестройки (для экрана A-4)
 
     # Позиция в плане
     current_step_id: str | None

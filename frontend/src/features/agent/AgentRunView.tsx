@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AgentEvent, AgentRunStatus } from "@/api/agent"
-import type { RunView } from "./use-agent-runs"
+import { extractChanges, type PlanChange, type RunView } from "./use-agent-runs"
 
 // Блок запуска агента в чате (A-3, минимум для демонстрации критерия «пауза →
 // рестарт → продолжение»): цель, план, лента событий, карточка подтверждения и итог.
@@ -44,6 +44,43 @@ function statusColor(status: AgentRunStatus): string {
   return "text-slate-500"
 }
 
+const PLAN_CHANGE_LABEL: Record<string, string> = {
+  rebuild: "Пересборка",
+  continue: "Правка",
+  finish: "Завершение",
+}
+
+function diffLineColor(line: string): string {
+  if (line.startsWith("+")) return "text-emerald-600"
+  if (line.startsWith("-")) return "text-slate-400 line-through"
+  return "text-slate-600"
+}
+
+function PlanChanges({ changes }: { changes: PlanChange[] }) {
+  if (changes.length === 0) return null
+  return (
+    <div className="mt-2 space-y-1.5 rounded-lg bg-white/60 p-2">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <CircleDashed className="size-3 text-violet-500" />
+        Изменения плана
+      </div>
+      {changes.map((change) => (
+        <div key={change.id} className="space-y-0.5">
+          <div className="text-xs font-medium text-slate-600">
+            {PLAN_CHANGE_LABEL[change.action] ?? change.action}
+            {change.reason ? `: ${change.reason}` : ""}
+          </div>
+          {change.changes.map((line, i) => (
+            <div key={i} className={cn("text-xs", diffLineColor(line))}>
+              {line}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function eventLine(ev: AgentEvent): string | null {
   const p = ev.payload as Record<string, unknown>
   switch (ev.type) {
@@ -62,8 +99,15 @@ function eventLine(ev: AgentEvent): string | null {
     }
     case "observation":
       return null // сводка уже видна в tool_called
-    case "plan_changed":
-      return `План изменён (${p.action === "rebuild" ? "пересобран" : String(p.action ?? "")})`
+    case "plan_changed": {
+      const reason = typeof p.reason === "string" && p.reason ? `: ${p.reason}` : ""
+      const action = String(p.action ?? "")
+      if (action === "rebuild") return `План пересобран${reason}`
+      if (action === "finish") return `Итог принят${reason}`
+      return extractChanges(p.diff).length > 0
+        ? `План скорректирован${reason}`
+        : `План сверен${reason}`
+    }
     case "step_checked":
       return p.done === true ? "Шаг закрыт" : "Шаг не закрыт"
     case "needs_confirmation":
@@ -162,16 +206,26 @@ export function AgentRunView({
               <div key={step.id} className="flex items-center gap-1.5 text-xs text-slate-600">
                 {step.status === "done" ? (
                   <Check className="size-3 shrink-0 text-emerald-600" strokeWidth={2} />
+                ) : step.status === "dropped" ? (
+                  <X className="size-3 shrink-0 text-slate-400" strokeWidth={2} />
                 ) : (
                   <CircleDashed className="size-3 shrink-0 text-slate-400" strokeWidth={2} />
                 )}
-                <span className={cn(step.status === "done" && "text-slate-400 line-through")}>
+                <span
+                  className={cn(
+                    (step.status === "done" || step.status === "dropped") &&
+                      "text-slate-400 line-through",
+                  )}
+                >
                   {step.title}
+                  {step.status === "dropped" ? " (снят)" : ""}
                 </span>
               </div>
             ))}
           </div>
         ) : null}
+
+        <PlanChanges changes={view.planChanges} />
 
         {lines.length > 0 ? (
           <div className="mt-2 max-h-40 space-y-0.5 overflow-y-auto rounded-lg bg-white/60 p-2">

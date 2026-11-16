@@ -23,6 +23,14 @@ export type RunPlanItem = {
   status?: string
 }
 
+// Изменение плана «было/стало» для экрана (A-4): строки вида «+ s3: …», «~ s2: a → b», «- s1: …».
+export type PlanChange = {
+  id: number
+  action: string
+  reason: string | null
+  changes: string[]
+}
+
 export type RunView = {
   run: AgentRun
   createdAtMs: number
@@ -32,6 +40,8 @@ export type RunView = {
   card: AgentActionCard | null
   plan: RunPlanItem[] | null
   note: string | null
+  planChanges: PlanChange[]
+  pendingRebuildReason: string | null
   events: AgentEvent[]
   live: boolean
 }
@@ -54,8 +64,21 @@ function toEvent(e: { seq: number | null; data: Record<string, unknown> }): Agen
   }
 }
 
+/** Строки diff «было/стало» из payload (`diff.changes`) или пустой список. */
+export function extractChanges(diff: unknown): string[] {
+  if (diff == null || typeof diff !== "object") return []
+  const changes = (diff as { changes?: unknown }).changes
+  return Array.isArray(changes) ? changes.filter((c): c is string => typeof c === "string") : []
+}
+
+function withPlanChange(view: RunView, change: PlanChange): RunView {
+  const next = { ...view, planChanges: [...view.planChanges, change] }
+  if (change.reason != null) next.note = change.reason
+  return next
+}
+
 function foldEvent(view: RunView, ev: AgentEvent): RunView {
-  const next: RunView = {
+  let next: RunView = {
     ...view,
     events: [...view.events.slice(-(VISIBLE_EVENT_CAP - 1)), ev],
   }
@@ -64,13 +87,34 @@ function foldEvent(view: RunView, ev: AgentEvent): RunView {
     case "run_started":
       next.status = "running"
       break
-    case "plan_created":
+    case "plan_created": {
       next.plan = Array.isArray(payload.plan) ? (payload.plan as RunPlanItem[]) : next.plan
       next.note = typeof payload.note === "string" ? payload.note : next.note
+      // Пересборка (A-4): diff прежнего плана с новым приходит с plan_created
+      // после решения rebuild — причина берём из stash события plan_changed.
+      const rebuildChanges = extractChanges(payload.diff)
+      if (rebuildChanges.length > 0) {
+        next = withPlanChange(next, {
+          id: ev.id,
+          action: "rebuild",
+          reason: next.pendingRebuildReason,
+          changes: rebuildChanges,
+        })
+        next.pendingRebuildReason = null
+      }
       break
+    }
     case "plan_changed": {
       if (Array.isArray(payload.plan)) next.plan = payload.plan as RunPlanItem[]
-      if (typeof payload.reason === "string" && payload.reason) next.note = payload.reason
+      const action = typeof payload.action === "string" ? payload.action : "continue"
+      const reason = typeof payload.reason === "string" && payload.reason ? payload.reason : null
+      const changes = extractChanges(payload.diff)
+      if (changes.length > 0) {
+        next = withPlanChange(next, { id: ev.id, action, reason, changes })
+      } else if (action === "rebuild") {
+        // У пересборки своего diff нет — его отдаст следующий plan_created.
+        next.pendingRebuildReason = reason
+      }
       break
     }
     case "needs_confirmation":
@@ -106,6 +150,8 @@ function foldAll(run: AgentRun, events: AgentEvent[]): RunView {
     card: null,
     plan: null,
     note: null,
+    planChanges: [],
+    pendingRebuildReason: null,
     events: [],
     live: !TERMINAL.includes(run.status),
   }

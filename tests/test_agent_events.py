@@ -88,8 +88,8 @@ def _deps(collector: EventCollector) -> AgentDeps:
                             },
                             {
                                 "id": "s2",
-                                "title": "Проверить условия найма",
-                                "done_criteria": "условия",
+                                "title": "Проверить визовые правила",
+                                "done_criteria": "правила въезда с цитатами",
                                 "status": "todo",
                             },
                         ],
@@ -138,6 +138,112 @@ async def test_observer_receives_full_event_flow():
 
     plan_created = collector.of_type("plan_created")[0]
     assert [s["id"] for s in plan_created.payload["plan"]] == ["s1", "s2"]
+
+
+async def test_plan_changed_carries_reason_and_diff():
+    """A-4: событие перестройки отдаёт причину и diff «было/стало» для экрана."""
+    collector = EventCollector()
+    state = await run_agent_goal(GOAL, deps=_deps(collector))
+    assert state["stop_reason"] == "answered"
+
+    changed = collector.of_type("plan_changed")
+    assert len(changed) == 2, "две перестройки: continue и finish"
+
+    first = changed[0].payload
+    assert first["action"] == "continue"
+    assert first["reason"] == "шаг закрыт", "причина решения перестройки в событии"
+    diff = first["diff"]
+    assert diff is not None, "diff «было/стало» отдаётся событием"
+    assert any(line.startswith("~ s2:") for line in diff["changes"]), (
+        f"правка шага видна в diff: {diff['changes']}"
+    )
+    assert [s["id"] for s in diff["was"]] == ["s1", "s2"]
+    assert [s["id"] for s in diff["now"]] == ["s1", "s2"]
+
+    finish = changed[1].payload
+    assert finish["action"] == "finish"
+    assert finish["reason"] == "условия названы"
+    assert finish["diff"] is None, "финал план не правит — diff пустой"
+
+
+async def test_rebuild_diff_visible_in_plan_created():
+    """A-4: после rebuild следующий plan_created несёт diff прежнего плана с новым."""
+    planner = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content=json.dumps(
+                    _plan_spec(
+                        ("s1", "Найти вакансии backend", "список вакансий из поиска"),
+                        ("s2", "Откликнуться на demo-101", "отклик в очереди"),
+                    )
+                )
+            ),
+            AIMessage(
+                content=json.dumps(
+                    _plan_spec(
+                        ("s1", "Найти вакансии backend", "список вакансий из поиска"),
+                        ("s2", "Проверить визовые правила", "правила въезда с цитатами"),
+                    )
+                )
+            ),
+        ]
+    )
+    executor = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "queue_application",
+                        "args": {
+                            "vacancy_id": "demo-101",
+                            "cover_note": "Здравствуйте! Готов обсудить позицию backend.",
+                        },
+                        "id": "c1",
+                    }
+                ],
+            ),
+            AIMessage(content="Действие ждёт подтверждения."),
+        ]
+    )
+    replanner = ScriptedChatModel(
+        responses=[
+            AIMessage(
+                content=json.dumps(
+                    {"action": "rebuild", "reason": "отклик преждевременен без условий", "steps": []}
+                )
+            ),
+            AIMessage(
+                content=json.dumps({"action": "finish", "reason": "условия названы", "steps": []})
+            ),
+        ]
+    )
+    collector = EventCollector()
+    deps = AgentDeps(
+        planner=planner,
+        executor=executor,
+        replanner=replanner,
+        tools=TOOLS,
+        tool_context=ToolContext(account_id=1, db=FakeDemoDb()),
+        observer=collector,
+    )
+    state = await run_agent_goal(GOAL, deps=deps)
+    assert state["replans_used"] >= 1
+
+    rebuilds = [e for e in collector.of_type("plan_changed") if e.payload["action"] == "rebuild"]
+    assert rebuilds, "решение rebuild отдаётся событием"
+    assert rebuilds[0].payload["reason"] == "отклик преждевременен без условий"
+    assert rebuilds[0].payload["diff"] is None, "у rebuild своего diff нет — его отдаст планировщик"
+
+    created = collector.of_type("plan_created")
+    assert len(created) == 2, "исходный план и план после пересборки"
+    diff = created[1].payload["diff"]
+    assert diff is not None, "планировщик после rebuild отдаёт diff «было/стало»"
+    assert any(
+        line == "~ s2: Откликнуться на demo-101 → Проверить визовые правила"
+        for line in diff["changes"]
+    ), f"пересборка видна в diff: {diff['changes']}"
+    assert [s["id"] for s in created[1].payload["plan"]] == ["s1", "s2"]
 
 
 async def test_node_timings_present_for_every_node():

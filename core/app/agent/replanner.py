@@ -97,6 +97,7 @@ def replan_node(model: BaseChatModel) -> Any:
         rebuilds = 1 if spec.action == "rebuild" else 0
         base: dict[str, Any] = {
             "replan_action": spec.action,
+            "replan_reason": spec.reason,
             "replans_used": state.get("replans_used", 0) + rebuilds,
             "model_calls": budget.calls,
             "tokens_in": budget.tokens_in,

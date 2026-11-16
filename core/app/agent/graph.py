@@ -46,6 +46,7 @@ from core.app.agent.state import (
     RunLimits,
     done_steps_summary,
     first_todo_step,
+    plan_diff,
     plan_has_open_steps,
 )
 from core.app.agent.subagents import COUNTRY_RESEARCHER, VACANCY_ASSESSOR
@@ -335,13 +336,16 @@ def _after_node_event(
     if name == "plan":
         plan = out.get("plan")
         if plan is not None:
-            observer.emit(
-                AgentEvent(
-                    type="plan_created",
-                    payload={"plan": [s.model_dump() for s in plan], "note": out.get("note")},
-                    node=name,
-                )
-            )
+            payload: dict[str, Any] = {
+                "plan": [s.model_dump() for s in plan],
+                "note": out.get("note"),
+            }
+            before = state.get("plan") or []
+            if before:
+                # Пересборка (после rebuild): diff «было/стало» между прежним планом
+                # и новым — экран показывает, что именно поменял планировщик (A-4).
+                payload["diff"] = plan_diff(before, plan)
+            observer.emit(AgentEvent(type="plan_created", payload=payload, node=name))
         return
     if name == "step":
         observations = out.get("observations")
@@ -374,14 +378,21 @@ def _after_node_event(
         action = out.get("replan_action")
         if action is None:
             return
-        changes = out.get("plan_changes") or state.get("plan_changes") or []
+        # Свежий diff только у решения «continue» с правкой плана; у rebuild/finish
+        # его нет (пересборку покажет следующий plan_created, финал план не правит),
+        # а устаревший diff прошлого шага в событие тащить нельзя (A-4).
+        diff = None
+        if action == "continue":
+            changes = out.get("plan_changes") or []
+            if changes and changes[-1].get("changes"):
+                diff = changes[-1]
         observer.emit(
             AgentEvent(
                 type="plan_changed",
                 payload={
                     "action": action,
-                    "reason": out.get("note"),
-                    "changes": changes[-1] if changes else None,
+                    "reason": out.get("replan_reason"),
+                    "diff": diff,
                     "plan": [s.model_dump() for s in out.get("plan") or state.get("plan") or []],
                 },
                 node=name,

@@ -83,6 +83,7 @@ def _state_with(plan: list[PlanStep], **overrides: Any) -> AgentState:
         "note": "",
         "plan": plan,
         "plan_changes": [],
+        "replan_reason": None,
         "current_step_id": None,
         "replan_action": None,
         "observations": [],
