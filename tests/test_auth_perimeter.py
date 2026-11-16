@@ -354,6 +354,12 @@ async def test_auth_status_bootstrap(accounts: FakeAccountsStore, no_env_auth: N
     assert status.openrouter_key_configured is False
     assert status.extension_confirmed is False
     assert status.bot_configured is False
+    # U-0: режим курса по умолчанию — видно только то, что относится к сценарию агента.
+    assert status.features["agent"] is True
+    assert status.features["jobs"] is True
+    assert status.features["resume"] is True
+    assert status.features["market"] is False
+    assert status.features["extension_nav"] is False
 
 
 @pytest.mark.asyncio

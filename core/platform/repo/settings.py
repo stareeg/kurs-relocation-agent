@@ -19,6 +19,7 @@ default_app_settings_values` — этот модуль их не знает, т�
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -137,6 +138,54 @@ async def set_setting(
 
 # AUTH-1: онбординг — jsonb-словарь флагов (`extension_confirmed`, …), не блокирует работу.
 KEY_ONBOARDING = "onboarding"
+
+
+# U-0 (PLAN 3.2): разделы интерфейса и режим курса. Скрытый раздел пропадает из меню, его
+# адрес на фронте отдаёт «не найдено»; код и API раздела остаются. Значение `ui_features` в
+# app_settings — {"раздел": true/false} — перекрывает умолчание без пересборки фронта.
+UI_SECTIONS: tuple[str, ...] = (
+    "agent",
+    "jobs",
+    "resume",
+    "screening",
+    "tech",
+    "offers",
+    "extension_nav",
+    "market",
+    "companies",
+    "career",
+    "multiplayer",
+    "today",
+)
+COURSE_HIDDEN_SECTIONS: frozenset[str] = frozenset(
+    {
+        "screening",
+        "tech",
+        "offers",
+        "extension_nav",
+        "market",
+        "companies",
+        "career",
+        "multiplayer",
+        "today",
+    }
+)
+
+
+async def get_ui_features(*, db: Executor | None = None) -> dict[str, bool]:
+    """Видимость разделов: умолчание режима курса + перекрытие из `app_settings.ui_features`."""
+    features = {key: key not in COURSE_HIDDEN_SECTIONS for key in UI_SECTIONS}
+    override = await get_setting("ui_features", None, account_id=None, db=db)
+    if isinstance(override, str):
+        try:
+            override = json.loads(override)
+        except ValueError:
+            override = None
+    if isinstance(override, dict):
+        for key, value in override.items():
+            if key in features and isinstance(value, bool):
+                features[key] = value
+    return features
 
 
 async def is_extension_confirmed(*, account_id: int | None, db: Executor | None = None) -> bool:

@@ -7038,6 +7038,13 @@ export interface components {
              * @default false
              */
             is_admin: boolean;
+            /**
+             * Features
+             * @description U-0: видимость разделов интерфейса (режим курса).
+             */
+            features?: {
+                [key: string]: boolean;
+            };
         };
         /**
          * AutoApplyClearResponse

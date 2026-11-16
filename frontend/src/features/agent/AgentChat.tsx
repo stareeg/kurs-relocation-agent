@@ -47,6 +47,8 @@ import { useAgentSessions } from "./use-agent-sessions"
 import { useAgentRuns, type RunView } from "./use-agent-runs"
 import { AgentRunView, type VacancyRef } from "./AgentRunView"
 import { useJobs } from "@/features/jobs/use-jobs"
+import { useResumeData } from "@/features/resume/use-resume"
+import { Link } from "react-router-dom"
 import { JobDetailDrawer } from "@/features/jobs/JobDetailDrawer"
 import type { Job } from "@/api/jobs"
 import { AgentChatSessions } from "./AgentChatSessions"
@@ -196,6 +198,15 @@ export function AgentChat() {
   const jobsQuery = useJobs()
   const jobs = jobsQuery.data
   const [openJob, setOpenJob] = useState<Job | null>(null)
+  const resumeQuery = useResumeData()
+  // Пустые состояния с действием (U-0): агенту не с чем работать без резюме и вакансий.
+  const resume = resumeQuery.data
+  const resumeEmpty =
+    resume != null &&
+    !(resume.experience?.length ?? 0) &&
+    !(resume.key_skills?.length ?? 0) &&
+    !resume.about?.trim()
+  const jobsEmpty = jobsQuery.isSuccess && (jobs ?? []).filter(Boolean).length === 0
   const [sessionsOpen, setSessionsOpen] = useState(false)
 
   // Вакансии аккаунта по id: название вместо id в карточке подтверждения и чипы
@@ -486,6 +497,31 @@ export function AgentChat() {
                   условия найма, оценка, сопроводительное письмо. Отклик ставит в очередь только
                   после вашего подтверждения.
                 </p>
+                {resumeEmpty || jobsEmpty ? (
+                  <div className="mt-6 rounded-lg border border-status-warn-line bg-status-warn-soft p-4">
+                    <div className="text-sm font-medium text-foreground">
+                      Агенту пока не с чем работать
+                    </div>
+                    <ul className="mt-2 space-y-2 text-sm text-foreground">
+                      {resumeEmpty ? (
+                        <li className="flex flex-wrap items-center justify-between gap-2">
+                          <span>Резюме пустое: агент не сможет оценить вакансии под вас.</span>
+                          <Button asChild size="sm" variant="outline">
+                            <Link to="/resume">Заполнить резюме</Link>
+                          </Button>
+                        </li>
+                      ) : null}
+                      {jobsEmpty ? (
+                        <li className="flex flex-wrap items-center justify-between gap-2">
+                          <span>В базе нет вакансий: искать будет не по чему.</span>
+                          <Button asChild size="sm" variant="outline">
+                            <Link to="/jobs">Добавить вакансии</Link>
+                          </Button>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                ) : null}
                 <div className="mt-6 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Попробуйте
                 </div>

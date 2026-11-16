@@ -34,6 +34,7 @@ import { useLiveEventInvalidation } from "@/app/use-live-invalidation"
 import type { AuthStatus } from "@/api/auth"
 import { useAuth } from "@/features/auth/auth-context"
 import { useAuthStatusQuery } from "@/features/auth/use-auth-status"
+import { isSectionVisible, NAV_SECTION } from "@/features/auth/sections"
 import { isGateOpen, needsTokenLogin } from "@/features/auth/onboarding"
 import { useActiveJobsCount, useJobStageCounts } from "@/features/jobs/use-jobs"
 import { useResumeData, useResumeGap } from "@/features/resume/use-resume"
@@ -57,11 +58,13 @@ type NavItem = { to: string; label: string; icon: typeof MessageSquare }
 // «Карьера» вернулась в меню из кликабельного футера профиля: раздел, который находят только
 // случайным кликом по собственному имени, не существует. Сам футер теперь ведёт в «Аккаунт»
 // (см. SidebarProfile) — и нижний пункт «Аккаунт» из рельса убран, чтобы не дублировать.
+// U-0: «Агент» — первым пунктом (стартовая страница курса), разделы вне сценария агента
+// скрываются флагами из статуса входа (`features/auth/sections.ts`).
 const NAV_GROUPS: ReadonlyArray<ReadonlyArray<NavItem>> = [
-  [{ to: "/resume", label: "Резюме", icon: FileText }],
   [
     { to: "/chat", label: "Агент", icon: MessageSquare },
     { to: "/jobs", label: "Вакансии", icon: Kanban },
+    { to: "/resume", label: "Резюме", icon: FileText },
     { to: "/screening", label: "Скрининги", icon: Headset },
     { to: "/tech", label: "Технички", icon: Code2 },
     { to: "/offers", label: "Офферы", icon: Scale },
@@ -74,6 +77,16 @@ const NAV_GROUPS: ReadonlyArray<ReadonlyArray<NavItem>> = [
   ],
   [{ to: "/multiplayer", label: "Мультиплеер", icon: UsersRound }],
 ]
+
+/** Группы меню без скрытых разделов (U-0); пустые группы выпадают вместе с разделителем. */
+function visibleNavGroups(status: AuthStatus | undefined): ReadonlyArray<ReadonlyArray<NavItem>> {
+  return NAV_GROUPS.map((group) =>
+    group.filter(({ to }) => {
+      const section = NAV_SECTION[to]
+      return section == null || isSectionVisible(status, section)
+    }),
+  ).filter((group) => group.length > 0)
+}
 
 // Разделитель между группами меню — без заголовка, просто тонкая линия (решение #9). В
 // свёрнутом состоянии остаётся во всю ширину узкой колонки, это ок — bar не несёт текста.
@@ -439,7 +452,9 @@ function GatedShell({ authStatus }: { authStatus: AuthStatus | undefined }) {
       nav={<OnboardingStepNav authStatus={authStatus} collapsed={navCollapsed} />}
       bottom={
         <>
-          <DisabledNavItem label="Автоотклики" icon={Puzzle} collapsed={navCollapsed} />
+          {isSectionVisible(authStatus, "extension_nav") ? (
+            <DisabledNavItem label="Автоотклики" icon={Puzzle} collapsed={navCollapsed} />
+          ) : null}
           <SidebarNavLink
             to="/settings"
             aria-label="Аккаунт"
@@ -469,7 +484,7 @@ function ResumeScoreBadge() {
   return <span className={METRIC_BADGE_CLASS}>{resumeScore}</span>
 }
 
-function FullShell({ isAdmin }: { isAdmin: boolean }) {
+function FullShell({ isAdmin, authStatus }: { isAdmin: boolean; authStatus: AuthStatus | undefined }) {
   useLiveEventInvalidation()
   const { data: activeCountData } = useActiveJobsCount()
   const activeCount = activeCountData?.count
@@ -512,8 +527,10 @@ function FullShell({ isAdmin }: { isAdmin: boolean }) {
       navCollapsed={navCollapsed}
       onToggleCollapsed={onToggleCollapsed}
       onAutoCollapse={onAutoCollapse}
-      notifications={<NavNotifications collapsed={navCollapsed} />}
-      nav={NAV_GROUPS.map((group, i) => (
+      notifications={
+        isSectionVisible(authStatus, "today") ? <NavNotifications collapsed={navCollapsed} /> : null
+      }
+      nav={visibleNavGroups(authStatus).map((group, i) => (
         <Fragment key={i}>
           {i > 0 && <NavGroupDivider />}
           {group.map(({ to, label, icon: Icon }) => {
@@ -627,6 +644,6 @@ export function AppShell() {
   return gated ? (
     <GatedShell authStatus={authStatus} />
   ) : (
-    <FullShell isAdmin={Boolean(authStatus?.is_admin)} />
+    <FullShell isAdmin={Boolean(authStatus?.is_admin)} authStatus={authStatus} />
   )
 }

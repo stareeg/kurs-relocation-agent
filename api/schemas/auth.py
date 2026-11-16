@@ -34,6 +34,9 @@ class AuthStatusResponse(BaseModel):
     # True только если запрос уже авторизован аккаунтом role=owner. Анонимный /auth/status
     # подставляет owner для флагов онбординга — is_admin при этом обязан остаться false.
     is_admin: bool = False
+    # U-0: видимость разделов интерфейса {"market": false, …} — режим курса прячет всё, что
+    # не относится к сценарию агента; перекрывается ключом `ui_features` в app_settings.
+    features: dict[str, bool] = Field(default_factory=dict)
 
 
 class LogoutResponse(BaseModel):

@@ -31,7 +31,9 @@ export function isRouteAllowedWhileGated(pathname: string): boolean {
  */
 export function homeTarget(s: AuthStatus | undefined): string {
   if (!s || !isGateOpen(s)) return "/settings"
-  if (!s.extension_confirmed) return "/extension"
+  // Режим курса (U-0): «Автоотклики» скрыты из меню — новый пользователь не идёт через
+  // шаг расширения, а сразу попадает к агенту.
+  if (!s.extension_confirmed && s.features?.extension_nav !== false) return "/extension"
   // Агент — главный экран (шаг U-0/U-1): старт всегда отсюда, не с воронки.
   return "/chat"
 }

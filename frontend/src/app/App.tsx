@@ -10,6 +10,7 @@ import { AuthGuard } from "@/app/AuthGuard"
 import { ErrorBoundary } from "@/app/ErrorBoundary"
 import { HomeRedirect } from "@/app/HomeRedirect"
 import { NotFound } from "@/app/NotFound"
+import { SectionRoute } from "@/app/SectionRoute"
 import { AppShell } from "@/app/layout/AppShell"
 import { ROUTE_LOADERS } from "@/app/route-loaders"
 import { useInitJobSources } from "@/features/jobs/use-job-sources"
@@ -76,17 +77,66 @@ export function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/jobs/:vacancyId" element={<JobsPage />} />
-                <Route path="/market" element={<MarketPage />} />
-                <Route path="/companies" element={<CompaniesPage />} />
+                <Route
+                  path="/market"
+                  element={
+                    <SectionRoute section="market">
+                      <MarketPage />
+                    </SectionRoute>
+                  }
+                />
+                <Route
+                  path="/companies"
+                  element={
+                    <SectionRoute section="companies">
+                      <CompaniesPage />
+                    </SectionRoute>
+                  }
+                />
                 <Route path="/resume" element={<ResumePage />} />
-                <Route path="/career" element={<CareerPage />} />
-                <Route path="/multiplayer" element={<MultiplayerPage />} />
+                <Route
+                  path="/career"
+                  element={
+                    <SectionRoute section="career">
+                      <CareerPage />
+                    </SectionRoute>
+                  }
+                />
+                <Route
+                  path="/multiplayer"
+                  element={
+                    <SectionRoute section="multiplayer">
+                      <MultiplayerPage />
+                    </SectionRoute>
+                  }
+                />
                 {import.meta.env.DEV ? (
                   <Route path="/multiplayer/dev/gfx" element={<GfxShowcasePage />} />
                 ) : null}
-                <Route path="/screening" element={<ScreeningPage />} />
-                <Route path="/tech" element={<TechPage />} />
-                <Route path="/offers" element={<OffersPage />} />
+                <Route
+                  path="/screening"
+                  element={
+                    <SectionRoute section="screening">
+                      <ScreeningPage />
+                    </SectionRoute>
+                  }
+                />
+                <Route
+                  path="/tech"
+                  element={
+                    <SectionRoute section="tech">
+                      <TechPage />
+                    </SectionRoute>
+                  }
+                />
+                <Route
+                  path="/offers"
+                  element={
+                    <SectionRoute section="offers">
+                      <OffersPage />
+                    </SectionRoute>
+                  }
+                />
                 <Route path="/extension" element={<ExtensionPage />} />
                 {/* Разделы и выбранный человек — в адресе (Этап 1.2): ссылка воспроизводит
                     экран, «назад» закрывает карточку, а не раздел. Пульт — голый `/admin`,

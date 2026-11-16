@@ -44,7 +44,11 @@ from core.domains.profile import telegram_link as tg
 from core.domains.profile import web_auth
 from core.platform.observability import event
 from core.platform.repo.accounts import get_account_by_id, get_owner_account, telegram_username_map
-from core.platform.repo.settings import is_extension_confirmed, is_openrouter_key_configured
+from core.platform.repo.settings import (
+    get_ui_features,
+    is_extension_confirmed,
+    is_openrouter_key_configured,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,7 @@ async def build_auth_status(
         bot_username=(identity.username if identity else None) or fallback_username or None,
         account_username=telegram_username,
         is_admin=is_admin,
+        features=await get_ui_features(),
     )
 
 
