@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any, cast
 
 from langchain_core.language_models import BaseChatModel
@@ -18,6 +17,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from core.app.agent.budget import budget_from
 from core.app.agent.contracts import Tool, ToolContext
+from core.app.agent.events import RunObserver
 from core.app.agent.harness import build_step_agent
 from core.app.agent.prompts import load_prompt
 from core.app.agent.state import (
@@ -66,15 +66,19 @@ def step_node(
     tools: tuple[Tool, ...],
     base_context: ToolContext,
     limits: RunLimits,
+    observer: RunObserver | None = None,
 ) -> Any:
-    """Узел `step`: собрать исполнителя deepagents на текущий шаг и выполнить его."""
+    """Узел `step`: собрать исполнителя deepagents на текущий шаг и выполнить его.
+
+    `observer` (A-3) получает события шага: tool_called на каждый вызов инструмента.
+    """
 
     async def _step(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         step = first_todo_step(state["plan"])
         if step is None:
             return {"stop_reason": "plan_exhausted"}
         index = state.get("steps_taken", 0) + 1
-        recorder = StepRecorder(step.id, index)
+        recorder = StepRecorder(step.id, index, emit=observer)
         ctx = build_run_context(base_context, recorder)
         agent: CompiledStateGraph = build_step_agent(
             model=model,
@@ -99,7 +103,14 @@ def step_node(
         budget = budget_from(config)
         observation: Observation = recorder.to_observation(answer)
         pending: dict[str, Any] | None = (
-            asdict(recorder.pending) if recorder.pending else state.get("pending_action")
+            {
+                "action": recorder.pending.action,
+                "params": recorder.pending.params,
+                "step_id": step.id,
+                "index": index,
+            }
+            if recorder.pending
+            else state.get("pending_action")
         )
         return {
             "current_step_id": step.id,

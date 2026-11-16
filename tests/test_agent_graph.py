@@ -181,11 +181,14 @@ async def test_check_marks_done_and_failure_streak():
 
 
 def test_routes_step_check_replan():
-    """Переходы: план→шаг, предел шага→финал, неудачи→перестройка, rebuild→план."""
+    """Переходы: план→шаг, шаг→подтверждение, пределы после чека, неудачи→перестройка."""
     limits = RunLimits(max_steps=2)
     plan = [PlanStep(id="s1", title="шаг", done_criteria="критерий")]
-    state = _state_with(plan, steps_taken=2)
-    assert route_after_step(state, limits) == "finalize", "предел шагов — честный финал"
+    # Предел шагов/бюджета проверяет ребро после чека (A-3: confirm стоит до чека).
+    state_limit = _state_with(plan, steps_taken=2)
+    assert route_after_step(state_limit) == "confirm"
+    assert route_after_check(state_limit, limits) == "finalize", "предел шагов — честный финал"
+    assert route_after_step(_state_with(plan, stop_reason="model_error")) == "finalize"
     assert route_after_plan(_state_with(plan, stop_reason="model_error")) == "finalize"
 
     state_ok = _state_with(
@@ -193,8 +196,9 @@ def test_routes_step_check_replan():
         observations=[Observation(step_id="s1", index=1, summaries=["ок"])],
         steps_taken=1,
     )
-    assert route_after_step(state_ok, limits) == "check"
-    assert route_after_check(state_ok, limits) == "replan"
+    assert route_after_step(state_ok) == "confirm"
+    state_checked = {**state_ok, "steps_taken": 1}
+    assert route_after_check(state_checked, limits) == "replan"
 
     state_failed = _state_with(
         plan,
@@ -205,6 +209,9 @@ def test_routes_step_check_replan():
     assert route_after_check(state_failed, limits) == "step", "одна неудача — повтор шага"
     state_stuck = {**state_failed, "failure_streak": limits.max_failure_streak + 1}
     assert route_after_check(state_stuck, limits) == "replan", "застряли — на перестройку"
+
+    state_budget = _state_with(plan, steps_taken=1, model_calls=limits.max_model_calls)
+    assert route_after_check(state_budget, limits) == "finalize", "бюджет — честный финал"
 
     state_rebuild = _state_with(plan, replan_action="rebuild", replans_used=1)
     assert route_after_replan(state_rebuild, limits) == "plan"

@@ -1,40 +1,54 @@
-"""Сборка графа агента: план → шаг → проверка → перестройка → финал (A-1).
+"""Сборка графа агента: план → шаг → подтверждение → проверка → перестройка → финал (A-1/A-3).
 
 Узлы как на схеме в PLAN 3: планировщик собирает план, исполнитель deepagents выполняет
-шаг, проверка шага (в A-1 — код-эвристика, модельная самопроверка придёт в A-5),
-перестройка решает continue/rebuild/finish, финал отдаёт ответ или честный частичный
-результат. Пределы (`RunLimits`) проверяются рёбрами между фазами; выход за предел —
-остановка с частичным итогом, а не ошибка.
+шаг, узел `confirm` ставит граф на паузу, когда модель запросила действие (`queue_application`),
+и ждёт «да» человека через `interrupt()` — после рестарта API запуск продолжается с того же
+чекпойнта, «да» выполняет действие. Проверка шага (в A-1 — код-эвристика, модельная
+самопроверка придёт в A-5), перестройка решает continue/rebuild/finish, финал отдаёт ответ
+или честный частичный результат. Пределы (`RunLimits`) проверяются рёбрами между фазами;
+выход за предел — остановка с частичным итогом, а не ошибка.
+
+Наблюдатель (`AgentDeps.observer`, A-3) получает события запуска: узловые таймеры
+(`node_timing`, метрика p90 шага — OQ-29) и содержательные события
+(plan_created/step_started/observation/…). Без наблюдателя граф работает как раньше.
 
 Запуск: `run_agent_goal(goal)` — считает бюджет через колбэк (`RunBudget`), поддерживает
-чекпойнтер, возвращает итоговое состояние.
+чекпойнтер, возвращает итоговое состояние; фоновые запуски с паузой ведёт `runs.py`.
 """
 
 from __future__ import annotations
 
+import inspect
+import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import interrupt
 
 from core.app.agent.budget import RunBudget, put_budget
-from core.app.agent.contracts import Tool, ToolContext
+from core.app.agent.contracts import Tool, ToolCall, ToolContext
+from core.app.agent.events import AgentEvent, RunObserver, node_event
 from core.app.agent.executor import step_node
 from core.app.agent.planner import planner_node
 from core.app.agent.replanner import replan_node
 from core.app.agent.state import (
     STOP_REASONS_TEXT,
     AgentState,
+    Observation,
     PlanStep,
     RunLimits,
     done_steps_summary,
+    first_todo_step,
     plan_has_open_steps,
 )
+from core.app.agent.toolkit import execute_tool
 
 
 @dataclass(slots=True)
@@ -43,6 +57,7 @@ class AgentDeps:
 
     Тиры (решение 15.11, OQ-13): планировщик и перестройка — advanced (high effort),
     исполнитель шага — basic (low effort, скорость). Судья (A-5) добавит свой вызов.
+    `observer` (A-3) — синхронный получатель событий запуска (узловые таймеры, шаги).
     """
 
     planner: BaseChatModel
@@ -51,13 +66,14 @@ class AgentDeps:
     limits: RunLimits = field(default_factory=RunLimits)
     tools: tuple[Tool, ...] = field(default_factory=tuple)
     tool_context: ToolContext = field(default_factory=ToolContext)
+    observer: RunObserver | None = None
 
 
 def default_deps(account_id: int = 1) -> AgentDeps:
     """Депенденси по умолчанию: модели по декларациям реестра, инструменты продукта (A-2).
 
-    `account_id` — аккаунт запроса (в A-3 его передаст API из сессии); по умолчанию
-    демо-аккаунт. БД инструментов не передаётся: домены сами открывают пул.
+    `account_id` — аккаунт запроса; менеджер запусков (`runs.py`) передаёт аккаунт
+    владельца запуска. БД инструментов не передаётся: домены сами открывают пул.
     """
     from core.app.agent.llm import (
         AGENT_PLAN,
@@ -107,6 +123,94 @@ def check_node() -> Any:
         return {"failure_streak": state.get("failure_streak", 0) + 1}
 
     return _check
+
+
+def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pausable: bool) -> Any:
+    """Узел `confirm` (A-3): пауза на подтверждении действия.
+
+    Шаг поставил карточку в `pending_action` → узел вызывает `interrupt()`: граф
+    останавливается, состояние лежит в чекпойнте, менеджер запуска ждёт решения.
+    «Да» — резюм с тем же чекпойнта: узел выполняет действие и дописывает наблюдение
+    (последнее наблюдение — уже про результат действия, чек закроет шаг). «Нет» —
+    наблюдение с ошибкой: шаг останется открытым, агент перестроится.
+
+    Без чекпойнта пауза невозможна (нечем резюмить) — узел пропускает: карточка остаётся
+    в состоянии как в A-2 (модель получает «отложено», действие не выполняется).
+    """
+
+    async def _confirm(state: AgentState) -> dict[str, Any]:
+        pending = state.get("pending_action")
+        if not pending:
+            return {}
+        if not pausable:
+            return {}
+        decision: Any = interrupt(
+            {
+                "action": str(pending.get("action", "")),
+                "params": pending.get("params") or {},
+                "step_id": str(pending.get("step_id") or state.get("current_step_id") or ""),
+            }
+        )
+        approved = bool(decision.get("approved"))
+        # Событие confirmation_resolved отдаёт менеджер запусков сразу после решения —
+        # узел его не дублирует (второй проход узла после резюма).
+        step_id = str(pending.get("step_id") or state.get("current_step_id") or "s?")
+        index = int(pending.get("index") or state.get("steps_taken") or 1)
+        action = str(pending.get("action", ""))
+        if approved:
+            # Человек сказал «да»: выполнить действие с автоподтверждением. Тот же
+            # ToolContext → общие submissions, идемпотентность дублей сохраняется.
+            call = ToolCall(
+                id=f"{action}-approval-{index}",
+                name=action,
+                arguments=dict(pending.get("params") or {}),
+            )
+            ctx = replace(base_context, confirm=lambda _card: True)
+            result, error, _ = await execute_tool(call, ctx)
+            if error is None:
+                summary = f"{action}: выполнено после подтверждения человеком"
+            else:
+                summary = f"{action}: ошибка после подтверждения — {error.message}"
+            observation = Observation(
+                step_id=step_id,
+                index=index,
+                tools=[action],
+                summaries=[summary],
+                error=error.message if error else None,
+            )
+            if observer is not None:
+                observer.emit(
+                    AgentEvent(
+                        type="tool_called",
+                        payload={
+                            "step_id": step_id,
+                            "index": index,
+                            "tool": action,
+                            "ok": error is None,
+                            "summary": summary,
+                            "error": error.message if error else None,
+                        },
+                        node="confirm",
+                    )
+                )
+        else:
+            observation = Observation(
+                step_id=step_id,
+                index=index,
+                tools=[action],
+                summaries=[f"{action}: человек отклонил действие"],
+                error="человек отклонил действие — не повторяй его без явной просьбы",
+            )
+        if observer is not None:
+            observer.emit(
+                AgentEvent(type="observation", payload=observation.model_dump(), node="confirm")
+            )
+        return {
+            "pending_action": None,
+            "observations": [*(state.get("observations") or []), observation],
+        }
+
+    return _confirm
 
 
 def over_budget(state: AgentState, limits: RunLimits) -> bool:
@@ -174,17 +278,25 @@ def route_after_plan(state: AgentState) -> Literal["step", "finalize"]:
     return "step"
 
 
-def route_after_step(state: AgentState, limits: RunLimits) -> Literal["check", "finalize"]:
-    """После шага: предел или бюджет исчерпаны — финал; иначе проверка шага."""
+def route_after_step(state: AgentState) -> Literal["confirm", "finalize"]:
+    """После шага: сбой модели — финал; иначе сначала подтверждение действия (A-3).
+
+    Пределы шагов/бюджета проверяет ребро после `check`: карточка действия заслуживает
+    выполнения даже на границе бюджета, а лишних вызовов модели у `confirm` нет.
+    """
+    if state.get("stop_reason") is not None:
+        return "finalize"
+    return "confirm"
+
+
+def route_after_check(
+    state: AgentState, limits: RunLimits
+) -> Literal["step", "replan", "finalize"]:
+    """После проверки: пределы — честный финал; неудачный шаг повторяется, потом перестройка."""
     if state.get("stop_reason") is not None:
         return "finalize"
     if over_budget(state, limits) or state.get("steps_taken", 0) >= limits.max_steps:
         return "finalize"
-    return "check"
-
-
-def route_after_check(state: AgentState, limits: RunLimits) -> Literal["step", "replan"]:
-    """После проверки: неудачный шаг повторяется, пока не кончатся повторы, потом перестройка."""
     if state.get("failure_streak", 0) > limits.max_failure_streak:
         return "replan"
     observations = state.get("observations") or []
@@ -205,6 +317,116 @@ def route_after_replan(state: AgentState, limits: RunLimits) -> Literal["step", 
     return "step"
 
 
+def _after_node_event(
+    name: str, state: AgentState, out: dict[str, Any], observer: RunObserver
+) -> None:
+    """Содержательное событие после узла, по его выходу (A-3)."""
+    if name == "plan":
+        plan = out.get("plan")
+        if plan is not None:
+            observer.emit(
+                AgentEvent(
+                    type="plan_created",
+                    payload={"plan": [s.model_dump() for s in plan], "note": out.get("note")},
+                    node=name,
+                )
+            )
+        return
+    if name == "step":
+        observations = out.get("observations")
+        if observations:
+            observer.emit(
+                AgentEvent(
+                    type="observation",
+                    payload=observations[-1].model_dump(),
+                    node=name,
+                )
+            )
+        return
+    if name == "check":
+        observations = state.get("observations") or []
+        if not observations:
+            return
+        last: Observation = observations[-1]
+        done = False
+        if isinstance(out.get("plan"), list):
+            done = any(s.id == last.step_id and s.status == "done" for s in out["plan"])
+        observer.emit(
+            AgentEvent(
+                type="step_checked",
+                payload={"step_id": last.step_id, "done": done, "error": last.error},
+                node=name,
+            )
+        )
+        return
+    if name == "replan":
+        action = out.get("replan_action")
+        if action is None:
+            return
+        changes = out.get("plan_changes") or state.get("plan_changes") or []
+        observer.emit(
+            AgentEvent(
+                type="plan_changed",
+                payload={
+                    "action": action,
+                    "reason": out.get("note"),
+                    "changes": changes[-1] if changes else None,
+                    "plan": [s.model_dump() for s in out.get("plan") or state.get("plan") or []],
+                },
+                node=name,
+            )
+        )
+
+
+def _observed_node(name: str, fn: Any, observer: RunObserver | None) -> Any:
+    """Обернуть узел: таймер узла (OQ-29) и события входа/выхода, если есть наблюдатель.
+
+    Пауза (`GraphInterrupt`) времени узла не считается — ожидание человека живёт
+    снаружи графа, в менеджере запусков. Узлы с двумя позиционными параметрами получают
+    config, узлы с одним — как раньше (langgraph сам разруливал арность до обёртки).
+    """
+    if observer is None:
+        return fn
+
+    positional = [
+        p
+        for p in inspect.signature(fn).parameters.values()
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    takes_config = len(positional) >= 2
+
+    async def _inner(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+        if name == "step":
+            step = first_todo_step(state.get("plan") or [])
+            if step is not None:
+                observer.emit(
+                    AgentEvent(
+                        type="step_started",
+                        payload={
+                            "step_id": step.id,
+                            "index": state.get("steps_taken", 0) + 1,
+                            "title": step.title,
+                        },
+                        node=name,
+                    )
+                )
+        started = time.perf_counter()
+        try:
+            out = fn(state, config) if takes_config else fn(state)
+            if inspect.isawaitable(out):
+                out = await out
+        except GraphInterrupt:
+            observer.emit(node_event(name, (time.perf_counter() - started) * 1000, paused=True))
+            raise
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        observer.emit(node_event(name, elapsed_ms))
+        if isinstance(out, dict):
+            _after_node_event(name, state, out, observer)
+        return out
+
+    return _inner
+
+
 def build_agent_graph(
     deps: AgentDeps | None = None,
     *,
@@ -213,11 +435,22 @@ def build_agent_graph(
     """Собрать граф агента. Чекпойнтер — опционально (MemorySaver в тестах, Postgres в A-3)."""
     deps = deps or default_deps()
     limits = deps.limits
+    observer = deps.observer
     graph: StateGraph = StateGraph(AgentState)
-    graph.add_node("plan", planner_node(deps.planner, limits))
-    graph.add_node("step", step_node(deps.executor, deps.tools, deps.tool_context, limits))
-    graph.add_node("check", check_node())
-    graph.add_node("replan", replan_node(deps.replanner))
+    graph.add_node("plan", _observed_node("plan", planner_node(deps.planner, limits), observer))
+    graph.add_node(
+        "step",
+        _observed_node(
+            "step",
+            step_node(deps.executor, deps.tools, deps.tool_context, limits, observer),
+            observer,
+        ),
+    )
+    graph.add_node(
+        "confirm", confirm_node(deps.tool_context, observer, pausable=checkpointer is not None)
+    )
+    graph.add_node("check", _observed_node("check", check_node(), observer))
+    graph.add_node("replan", _observed_node("replan", replan_node(deps.replanner), observer))
     graph.add_node("finalize", finalize_node(limits))
     graph.add_edge(START, "plan")
     graph.add_conditional_edges(
@@ -227,13 +460,14 @@ def build_agent_graph(
     )
     graph.add_conditional_edges(
         "step",
-        lambda s: route_after_step(s, limits),
-        {"check": "check", "finalize": "finalize"},
+        route_after_step,
+        {"confirm": "confirm", "finalize": "finalize"},
     )
+    graph.add_edge("confirm", "check")
     graph.add_conditional_edges(
         "check",
         lambda s: route_after_check(s, limits),
-        {"step": "step", "replan": "replan"},
+        {"step": "step", "replan": "replan", "finalize": "finalize"},
     )
     graph.add_conditional_edges(
         "replan",
@@ -273,6 +507,7 @@ __all__ = [
     "AgentDeps",
     "build_agent_graph",
     "check_node",
+    "confirm_node",
     "default_deps",
     "derive_stop_reason",
     "finalize_node",

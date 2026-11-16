@@ -158,6 +158,14 @@ ACCOUNT_SCOPED = {
     # Личные данные аккаунта (обобщение своего работодателя). account_id/RLS/policy/grant
     # с нуля в CREATE TABLE.
     "employer_descriptors",
+    # --- 0155_agent_runs.sql: запуски агента, события и чат главного чата (A-3) ---
+    # Всё личное на аккаунт: цель запуска, карточки действий, поток событий, диалоги.
+    # account_id/RLS/policy/grant с нуля в CREATE TABLE (у agent_events account_id —
+    # не избыточность: RLS событий проверяет его напрямую, без джойна).
+    "agent_runs",
+    "agent_events",
+    "agent_chat_sessions",
+    "agent_chat_messages",
 }
 
 # Один и тот же контент для всех аккаунтов по построению — объективные данные/кэш из
@@ -332,6 +340,13 @@ REQUIRED_ACCOUNT_SCOPED_TABLES = [
     # с нуля в CREATE TABLE (зеркало 0111+0115 market / 0110+0120 resume).
     "offers_chat_messages",
     "offers_chat_message_attachments",
+    # 0155_agent_runs.sql — запуски агента, события и чат главного чата (A-3): личные данные
+    # аккаунта с нуля (как offers_chat_messages). agent_events несёт денормализованный
+    # account_id для RLS (тот же приём, что debrief_attachments/hr_messages).
+    "agent_runs",
+    "agent_events",
+    "agent_chat_sessions",
+    "agent_chat_messages",
 ]
 
 # Таблицы без колонки account_id, у которых тем не менее обязана быть включена RLS с самого

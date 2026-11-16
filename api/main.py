@@ -17,7 +17,7 @@ import os
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -186,9 +186,48 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             exc_info=True,
         )
 
+    # A-3: чекпойнты графа агента в Postgres + менеджер фоновых запусков. Пауза на «да»
+    # переживает рестарт: состояние в чекпойнте, резюм строит граф заново. Мёртвые
+    # задачи прошлого процесса честно закрываются как failed, паузы остаются ждать.
+    stack: AsyncExitStack | None = None
+    if pool is not None:
+        try:
+            from core.app.agent.checkpoints import open_postgres_checkpointer
+            from core.app.agent.runs import get_runs_manager, recover_after_restart
+
+            stack = AsyncExitStack()
+            saver = await stack.enter_async_context(open_postgres_checkpointer())
+            get_runs_manager().set_checkpointer(saver)
+            stale = await recover_after_restart()
+            event(
+                logger,
+                "АГЕНТ",
+                "чекпойнтер запусков поднят (Postgres), менеджер готов%s",
+                f", брошенных задач закрыто: {stale}" if stale else "",
+            )
+        except Exception as exc:
+            if stack is not None:
+                with suppress(Exception):
+                    await stack.aclose()
+                stack = None
+            event(
+                logger,
+                "АГЕНТ",
+                "чекпойнтер запусков не поднят: %s — фоновые запуски недоступны",
+                exc,
+                level=logging.WARNING,
+            )
+
     try:
         yield
     finally:
+        if stack is not None:
+            with suppress(Exception):
+                from core.app.agent.runs import get_runs_manager
+
+                await get_runs_manager().stop_all()
+            with suppress(Exception):
+                await stack.aclose()
         with suppress(Exception):
             await stop_background_runtime()
         if log_sink is not None:

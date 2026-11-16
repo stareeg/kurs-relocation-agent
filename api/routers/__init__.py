@@ -11,6 +11,8 @@ from typing import Any
 
 from fastapi import Depends, FastAPI
 
+from api.routers.agent import chats as agent_chats
+from api.routers.agent import runs as agent_runs
 from api.routers.assistant import attachments, chat, conversations, notes
 from api.routers.career import facts as career_facts
 from api.routers.career import friendships as career_friendships
@@ -50,6 +52,8 @@ __all__ = [
     "analytics",
     "attachments",
     "auth",
+    "agent_chats",
+    "agent_runs",
     "auto_apply",
     "avatar",
     "career_friendships",
@@ -104,6 +108,8 @@ def mount_routers(app: FastAPI, *, require_account: Any) -> None:
     """
     auth_deps = [Depends(require_account)]
     app.include_router(auth.router)
+    app.include_router(agent_chats.router, dependencies=auth_deps)
+    app.include_router(agent_runs.router, dependencies=auth_deps)
     app.include_router(admin.router, dependencies=auth_deps)
     app.include_router(auto_apply.router, dependencies=auth_deps)
     app.include_router(attachments.router, dependencies=auth_deps)

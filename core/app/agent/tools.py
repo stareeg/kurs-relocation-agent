@@ -40,6 +40,7 @@ from core.app.agent.contracts import (
     error_payload,
     short,
 )
+from core.app.agent.events import AgentEvent, RunObserver
 from core.app.agent.state import Observation
 from core.app.agent.toolkit import execute_tool, register_tools
 from core.domains.opportunities.jobs import (
@@ -550,9 +551,10 @@ class StepRecorder:
     шага в состояние (`Observation`, `vacancies`, `pending_action`).
     """
 
-    def __init__(self, step_id: str, index: int) -> None:
+    def __init__(self, step_id: str, index: int, emit: RunObserver | None = None) -> None:
         self.step_id = step_id
         self.index = index
+        self._observer = emit
         self.tools: list[str] = []
         self.summaries: list[str] = []
         self.last_error: str | None = None
@@ -565,27 +567,46 @@ class StepRecorder:
         result: dict[str, Any],
         error: dict[str, Any] | None,
     ) -> None:
-        """Запомнить один вызов: имя, короткую сводку, ошибку, вакансии."""
+        """Запомнить один вызов: имя, короткую сводку, ошибку, вакансии; событие наружу."""
         self.tools.append(tool.name)
         if error is not None:
             message = str(error.get("message", "ошибка инструмента"))
             self.summaries.append(f"{tool.name}: ошибка — {message}")
             self.last_error = message
-            return
-        self.summaries.append(f"{tool.name}: {short(result)}")
-        items = result.get("items")
-        if isinstance(items, list):
-            known = {str(v.get("id")) for v in self.vacancies if isinstance(v, dict)}
-            for item in items:
-                if isinstance(item, dict) and str(item.get("id")) not in known:
-                    self.vacancies.append(item)
-                    known.add(str(item.get("id")))
+        elif result.get("cancelled"):
+            # Действие отложено: подтвердит человек в узле confirm (A-3), это не ошибка.
+            self.summaries.append(f"{tool.name}: действие отложено до подтверждения человека")
+        else:
+            self.summaries.append(f"{tool.name}: {short(result)}")
+            items = result.get("items")
+            if isinstance(items, list):
+                known = {str(v.get("id")) for v in self.vacancies if isinstance(v, dict)}
+                for item in items:
+                    if isinstance(item, dict) and str(item.get("id")) not in known:
+                        self.vacancies.append(item)
+                        known.add(str(item.get("id")))
+        if self._observer is not None:
+            self._observer.emit(
+                AgentEvent(
+                    type="tool_called",
+                    payload={
+                        "step_id": self.step_id,
+                        "index": self.index,
+                        "tool": tool.name,
+                        "ok": error is None,
+                        "summary": self.summaries[-1],
+                        "error": error.get("message") if error else None,
+                    },
+                    node="step",
+                )
+            )
 
     def record_pending(self, card: ConfirmationCard) -> bool:
         """Действие ждёт подтверждения: карточка уходит в состояние, выполнения нет.
 
-        В A-2 подтверждение модели не отдаётся (решение остаётся за человеком, A-3
-        переведёт это в interrupt/resume), поэтому хук всегда отвечает «нет».
+        Хук всегда отвечает «нет» — execute_tool вернёт «отложено», а узел `confirm`
+        поставит граф на паузу (interrupt) и выполнит действие только после «да»
+        человека (A-3). Модель выбора человека не получает.
         """
         self.pending = card
         return False
