@@ -103,7 +103,8 @@ def final_answer_text(state: AgentState) -> str:
 
 
 def evidence_texts(state: AgentState) -> list[str]:
-    """Материалы, в которых могут жить цитаты: сводки шагов и карточки вакансий.
+    """Материалы, в которых могут жить цитаты: сводки шагов, дословные цитаты
+    инструментов (A-5) и карточки вакансий.
 
     Ответы модели шагов сюда не входят: цитата должна опираться на результаты
     инструментов, а не на слова самого агента (иначе проверка вырождается —
@@ -112,6 +113,7 @@ def evidence_texts(state: AgentState) -> list[str]:
     texts: list[str] = []
     for obs in state.get("observations") or []:
         texts.extend(obs.summaries)
+        texts.extend(obs.evidence_quotes)
     for item in state.get("vacancies") or []:
         if isinstance(item, dict):
             texts.extend(str(v) for v in item.values() if isinstance(v, (str, int, float)))

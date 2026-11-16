@@ -50,6 +50,8 @@ class Observation(BaseModel):
 
     Сырые результаты инструментов в состояние не складываются (история шага не тащится
     в следующий — риски PLAN 3.3): только короткие сводки и финальный текст шага.
+    `evidence_quotes` (A-5) — дословные цитаты из результатов инструментов, которые
+    сводка обрезает: их сверяет код-проверка судьи итога.
     """
 
     model_config = {"frozen": True}
@@ -58,6 +60,9 @@ class Observation(BaseModel):
     index: int = Field(description="номер шага в запуске, начиная с 1")
     tools: list[str] = Field(default_factory=list, description="какие инструменты вызвал шаг")
     summaries: list[str] = Field(default_factory=list, description="короткие сводки результатов")
+    evidence_quotes: list[str] = Field(
+        default_factory=list, description="дословные цитаты из результатов инструментов"
+    )
     error: str | None = Field(default=None, description="последняя ошибка инструмента, если была")
     answer: str | None = Field(default=None, description="финальный текст шага от модели")
 

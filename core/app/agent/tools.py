@@ -57,6 +57,8 @@ from core.kernel.errors import DomainError, InvalidInput, NotFound, RateLimited
 MAX_RESULT_ITEMS = 5
 """Потолок выдачи поиска: длинные списки съедают контекст шага (риски PLAN 3)."""
 _MAX_PROFILE_SKILLS = 15
+_MAX_EVIDENCE_QUOTES = 24
+"""Потолок цитат шага: полные результаты не тащим, только опору для судьи (A-5)."""
 _SEARCH_SCAN_LIMIT = 200
 """Сколько вакансий базы сканирует поиск: демо-база маленькая, длинные базы придут с K-1."""
 
@@ -567,6 +569,7 @@ class StepRecorder:
         self.subagent = subagent
         self.tools: list[str] = []
         self.summaries: list[str] = []
+        self.evidence_quotes: list[str] = []
         self.last_error: str | None = None
         self.vacancies: list[dict[str, Any]] = []
         self.pending: ConfirmationCard | None = None
@@ -595,6 +598,18 @@ class StepRecorder:
                     if isinstance(item, dict) and str(item.get("id")) not in known:
                         self.vacancies.append(item)
                         known.add(str(item.get("id")))
+            # Дословные цитаты инструментов (A-5): сводка их обрезает, а судья сверяет
+            # подстрокой — храним отдельно, в пределах потолка шага.
+            evidence = result.get("evidence")
+            if isinstance(evidence, list):
+                known = set(self.evidence_quotes)
+                for item in evidence:
+                    quote = str(item.get("quote", "")).strip() if isinstance(item, dict) else ""
+                    if len(quote) >= 8 and quote not in known:
+                        if len(self.evidence_quotes) >= _MAX_EVIDENCE_QUOTES:
+                            break
+                        self.evidence_quotes.append(quote)
+                        known.add(quote)
         if self._observer is not None:
             payload: dict[str, Any] = {
                 "step_id": self.step_id,
@@ -630,6 +645,7 @@ class StepRecorder:
             index=self.index,
             tools=list(self.tools),
             summaries=list(self.summaries),
+            evidence_quotes=list(self.evidence_quotes),
             error=self.last_error,
             answer=answer,
         )

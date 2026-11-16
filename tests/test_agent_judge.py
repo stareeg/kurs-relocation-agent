@@ -27,7 +27,7 @@ from core.app.agent.judge import (
     quote_failures_of,
 )
 from core.app.agent.state import AgentState, Observation, PlanStep, RunLimits
-from core.app.agent.tools import TOOLS, ensure_tools_registered
+from core.app.agent.tools import TOOLS, TOOL_BY_NAME, ensure_tools_registered
 from tests.fakes import FakeDemoDb, ScriptedChatModel
 
 ensure_tools_registered()
@@ -226,13 +226,43 @@ def test_evidence_excludes_agent_answers():
         step_id="s1",
         index=1,
         tools=["search_vacancies"],
-        summaries=["поиск: найдена Applied AI Engineer"],
+        summaries=["поиск: ок"],
         answer="Вывод: «какая-то цитата из головы».",
     )
     failures, quotes, missing = quote_check(_state(observations=[obs]))
     assert quotes == ["какая-то цитата из головы"]
     assert failures == ["какая-то цитата из головы"], "выдуманная цитата не проходит"
     assert missing is False
+
+
+def test_recorder_keeps_tool_evidence_quotes():
+    """Дословные цитаты инструментов идут в наблюдение: судья сверяет по ним (A-5)."""
+    from core.app.agent.tools import StepRecorder
+
+    recorder = StepRecorder("s1", 1)
+    recorder.record(
+        TOOL_BY_NAME["read_work_terms"],
+        {
+            "vacancy_id": "demo-102",
+            "residency_required": True,
+            "evidence": [
+                {"field": "residency", "quote": "Right to work in the EU required"},
+                {"field": "geo", "quote": "Удалённо из любой точки мира"},
+                {"field": "short", "quote": "коротко"},
+            ],
+        },
+        None,
+    )
+    obs = recorder.to_observation("итог шага")
+    assert "Right to work in the EU required" in obs.evidence_quotes
+    assert "Удалённо из любой точки мира" in obs.evidence_quotes
+    assert "коротко" not in obs.evidence_quotes, "меньше 8 знаков не цитата"
+
+    cited = obs.model_copy(
+        update={"answer": "Ловушка: «Right to work in the EU required»."}
+    )
+    failures, _, _ = quote_check(_state(observations=[cited]))
+    assert failures == [], "дословная цитата из инструмента проходит код-проверку"
 
 
 # ------------------------------------------------------------------- узел судьи итога
