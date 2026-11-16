@@ -7,9 +7,11 @@
 
 Разделение труда (критерий 4.1): цитаты проверяются кодом подстрокой (приём
 `core/domains/opportunities/work_terms.py`: нормализация пробелов, casefold, минимум
-8 знаков), модель-судья оценивает только смысл. Вывод без опоры-цитаты отправляет
-агента на доработку: узел `plan` собирает шаги-доработки, петля ограничена
-`RunLimits.max_judge_reworks`, исчерпание — честный финал `judge_failed`.
+8 знаков), модель-судья оценивает только смысл. Провал отправляет агента на доработку:
+в текущий план добавляется один шаг «собрать итог с дословными цитатами» (сделанные шаги
+остаются), петля ограничена `RunLimits.max_judge_reworks`, исчерпание — честный финал
+`judge_failed`. После выполненного действия доработки нет: повтор мог бы выполнить его
+ещё раз — итог идёт как есть, вердикт судьи виден в событиях.
 
 Сбой судьи — не падение запуска: вердикт `unverified` («не проверяется») идёт как
 данные в состояние и события, граф продолжает по прежним правилам (уровень 1 —
@@ -33,7 +35,7 @@ from pydantic import BaseModel, Field
 from core.app.agent.budget import budget_from
 from core.app.agent.events import AgentEvent, RunObserver
 from core.app.agent.prompts import load_prompt
-from core.app.agent.state import AgentState, Observation, PlanStep, RunLimits
+from core.app.agent.state import AgentState, Observation, PlanStep, RunLimits, done_steps_summary
 from core.domains.opportunities.work_terms import quote_in_text
 from core.platform.llm.openrouter_chat import _StructuredOutputRunnable
 
@@ -73,15 +75,18 @@ class JudgeVerdict:
 
 # ------------------------------------------------------------------- цитаты кодом
 
-QUOTE_RE = re.compile(r"«([^«»]{8,300})»|\"([^\"\n]{8,300})\"")
-"""Цитата вывода: «…» или парные "…" от 8 знаков (короче — совпадёт с любой мелочью)."""
+QUOTE_RE = re.compile(r"«([^«»]{8,300})»")
+"""Цитата вывода: «…» от 8 знаков (короче — совпадёт с любой мелочью).
+
+Только «ёлочки», как требует промпт шага: в парных "…" до 16.11 ловились куски JSON из
+сводок инструментов и проваливали итог ложными «цитатами» (стенд, запуски 17 и 21)."""
 
 
 def extract_quotes(text: str) -> list[str]:
     """Цитаты-фрагменты из текста вывода в порядке появления, без дублей."""
     quotes: list[str] = []
     for match in QUOTE_RE.finditer(text or ""):
-        quote = (match.group(1) or match.group(2) or "").strip()
+        quote = (match.group(1) or "").strip()
         if quote and quote not in quotes:
             quotes.append(quote)
     return quotes
@@ -93,13 +98,19 @@ def quote_failures_of(quotes: list[str], evidence: list[str]) -> list[str]:
 
 
 def final_answer_text(state: AgentState) -> str:
-    """Текст итога, который судит судья уровня 2: ответ модели или сводки шагов."""
+    """Текст итога, который судит судья уровня 2: последний ответ модели.
+
+    Машинные сводки инструментов итогом не считаются. Запуск, закончившийся действием
+    после «да», судится по тому, что видит человек: что выполнено и что сделано до этого.
+    """
     observations = state.get("observations") or []
-    if observations:
-        answer = observations[-1].answer
-        if answer:
-            return answer
-    return "; ".join(s for o in observations for s in o.summaries)
+    if observations and observations[-1].action_done and observations[-1].answer:
+        done = done_steps_summary(state.get("plan") or [], observations)
+        return f"{observations[-1].answer}\n\nЧто удалось:\n{done}"
+    for observation in reversed(observations):
+        if observation.answer:
+            return observation.answer
+    return ""
 
 
 def evidence_texts(state: AgentState) -> list[str]:
@@ -255,9 +266,15 @@ def judge_node(
             "reworks_used": reworks,
             **budget.state_update(),
         }
+        rework: PlanStep | None = None
         if verdict == "fail":
-            if reworks + 1 <= limits.max_judge_reworks:
+            if any(o.action_done for o in state.get("observations") or []):
+                out["stop_reason"] = "answered"
+            elif reworks + 1 <= limits.max_judge_reworks:
                 out["reworks_used"] = reworks + 1
+                rework = rework_step(reworks + 1, reason)
+                out["plan"] = [*(state.get("plan") or []), rework]
+                out["replan_reason"] = f"судья не принял итог: {reason}"
             else:
                 out["stop_reason"] = "judge_failed"
                 out["note"] = reason
@@ -276,9 +293,47 @@ def judge_node(
                     node="judge",
                 )
             )
+            if rework is not None:
+                observer.emit(
+                    AgentEvent(
+                        type="plan_changed",
+                        payload={
+                            "action": "rework",
+                            "reason": out["replan_reason"],
+                            "plan": [step.model_dump() for step in out["plan"]],
+                            "diff": {"changes": [f"+ {rework.id}: {rework.title}"]},
+                        },
+                        node="judge",
+                    )
+                )
         return out
 
     return _judge
+
+
+_REWORK_REMARK_LIMIT = 300
+"""Замечание судьи в критерии шага доработки: коротко, критерий читают модель и человек."""
+
+
+def rework_step(number: int, reason: str) -> PlanStep:
+    """Шаг доработки итога (A-5): дописать ответ по цели, а не переделывать работу.
+
+    Исполнитель видит план с итогами сделанных шагов, поэтому собрать ответ с цитатами
+    может за один шаг. До 16.11 провал отправлял в планировщик, тот собирал план с нуля и
+    повторял поиск, письмо и отклик — запуск доедал бюджет (стенд, запуски 16, 17, 21).
+    """
+    remark = " ".join(reason.split())
+    if len(remark) > _REWORK_REMARK_LIMIT:
+        remark = remark[: _REWORK_REMARK_LIMIT - 1] + "…"
+    return PlanStep(
+        id=f"r{number}",
+        title="Собрать итог по цели с дословными цитатами",
+        done_criteria=(
+            "ответ закрывает цель целиком, опирается на итоги сделанных шагов, каждый вывод — "
+            "с дословной «цитатой» из результатов инструментов; новых инструментов-действий не "
+            f"вызывать; учесть замечание судьи: {remark}"
+        ),
+    )
 
 
 __all__ = [
@@ -293,5 +348,6 @@ __all__ = [
     "judge_step_call",
     "quote_check",
     "quote_failures_of",
+    "rework_step",
     "step_judge_inputs",
 ]

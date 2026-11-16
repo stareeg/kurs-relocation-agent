@@ -246,8 +246,9 @@ export function AgentRunCard({
 
       {summary.finalVerdict ? (
         <div
+          title={summary.finalVerdict.reason ?? undefined}
           className={cn(
-            "text-sm",
+            "line-clamp-2 text-sm",
             summary.finalVerdict.verdict === "pass"
               ? "text-status-strong-fg"
               : summary.finalVerdict.verdict === "fail"

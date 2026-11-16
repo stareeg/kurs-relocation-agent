@@ -53,7 +53,9 @@ GOAL = "Найди вакансию backend в Польше и скажи, ка�
 
 def _plan_spec(*steps: tuple[str, str, str]) -> dict[str, Any]:
     return {
-        "steps": [{"id": sid, "title": title, "done_criteria": criteria} for sid, title, criteria in steps],
+        "steps": [
+            {"id": sid, "title": title, "done_criteria": criteria} for sid, title, criteria in steps
+        ],
         "note": "цель понята: подобрать вакансию и проверить правила",
     }
 
@@ -154,9 +156,7 @@ async def test_executor_sees_only_domain_tools():
     recorder = StepRecorder("s1", 1)
     agent = build_step_agent(
         model=executor,
-        tools=to_langchain_tools(
-            TOOLS, ToolContext(account_id=1, db=FakeDemoDb()), recorder
-        ),
+        tools=to_langchain_tools(TOOLS, ToolContext(account_id=1, db=FakeDemoDb()), recorder),
         system_prompt="тест",
     )
     await agent.ainvoke({"messages": [("user", "тест")]})
@@ -237,16 +237,33 @@ def test_routes_step_check_replan():
     state_continue = _state_with(plan, replan_action="continue")
     assert route_after_replan(state_continue, limits) == "step"
 
-    judge_pass = {**state_finish, "judge_verdict": {"level": "final", "verdict": "pass", "reason": "цель покрыта"}}
+    judge_pass = {
+        **state_finish,
+        "judge_verdict": {"level": "final", "verdict": "pass", "reason": "цель покрыта"},
+    }
     assert route_after_judge(judge_pass, limits) == "finalize"
-    judge_fail = {**state_finish, "judge_verdict": {"level": "final", "verdict": "fail", "reason": "нет цитат"}}
-    assert route_after_judge(judge_fail, limits) == "plan", "провал итога — доработка"
+    judge_fail = {
+        **state_finish,
+        "judge_verdict": {"level": "final", "verdict": "fail", "reason": "нет цитат"},
+    }
+    closed = [s.model_copy(update={"status": "done"}) for s in plan]
+    judge_closed = {**judge_fail, "plan": closed}
+    assert route_after_judge(judge_closed, limits) == "finalize", (
+        "без шага доработки в плане — финал"
+    )
+    rework = PlanStep(
+        id="r1", title="Собрать итог по цели с дословными цитатами", done_criteria="цитаты"
+    )
+    judge_rework = {**judge_fail, "plan": [*closed, rework]}
+    assert route_after_judge(judge_rework, limits) == "step", "провал итога — шаг доработки"
     judge_stuck = {
         **judge_fail,
         "stop_reason": "judge_failed",
         "reworks_used": limits.max_judge_reworks,
     }
-    assert route_after_judge(judge_stuck, limits) == "finalize", "доработки исчерпаны — честный финал"
+    assert route_after_judge(judge_stuck, limits) == "finalize", (
+        "доработки исчерпаны — честный финал"
+    )
 
 
 # ------------------------------------------------------------------- пределы
@@ -275,13 +292,39 @@ async def test_step_limit_gives_honest_partial():
         ]
     )
     replanner = ScriptedChatModel(
-        responses=[AIMessage(content=json.dumps(_replan_spec("continue", [
-            {"id": "s1", "title": "Найти вакансии", "done_criteria": "список", "status": "done"},
-            {"id": "s2", "title": "Проверить условия найма", "done_criteria": "условия", "status": "done"},
-            {"id": "s3", "title": "Ещё шаг", "done_criteria": "критерий", "status": "todo"},
-        ])))]
+        responses=[
+            AIMessage(
+                content=json.dumps(
+                    _replan_spec(
+                        "continue",
+                        [
+                            {
+                                "id": "s1",
+                                "title": "Найти вакансии",
+                                "done_criteria": "список",
+                                "status": "done",
+                            },
+                            {
+                                "id": "s2",
+                                "title": "Проверить условия найма",
+                                "done_criteria": "условия",
+                                "status": "done",
+                            },
+                            {
+                                "id": "s3",
+                                "title": "Ещё шаг",
+                                "done_criteria": "критерий",
+                                "status": "todo",
+                            },
+                        ],
+                    )
+                )
+            )
+        ]
     )
-    state = await run_agent_goal(GOAL, deps=_deps(planner, executor, replanner, RunLimits(max_steps=2)))
+    state = await run_agent_goal(
+        GOAL, deps=_deps(planner, executor, replanner, RunLimits(max_steps=2))
+    )
 
     assert state["stop_reason"] == "step_limit"
     assert state["steps_taken"] == 2
@@ -299,15 +342,29 @@ async def test_model_budget_stops_run():
     )
     executor = ScriptedChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]),
+            AIMessage(
+                content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]
+            ),
             AIMessage(content="Есть варианты."),
         ]
     )
     replanner = ScriptedChatModel(
         responses=[
-            AIMessage(content=json.dumps(_replan_spec("continue", [
-                {"id": "s1", "title": "Найти вакансии", "done_criteria": "список", "status": "todo"},
-            ])))
+            AIMessage(
+                content=json.dumps(
+                    _replan_spec(
+                        "continue",
+                        [
+                            {
+                                "id": "s1",
+                                "title": "Найти вакансии",
+                                "done_criteria": "список",
+                                "status": "todo",
+                            },
+                        ],
+                    )
+                )
+            )
         ]
     )
     state = await run_agent_goal(
@@ -330,7 +387,12 @@ def test_apply_replan_by_id():
     ]
     updates = [
         {"id": "s1", "title": "поиск", "done_criteria": "список", "status": "todo"},
-        {"id": "s2", "title": "условия найма Kestrel", "done_criteria": "правила", "status": "todo"},
+        {
+            "id": "s2",
+            "title": "условия найма Kestrel",
+            "done_criteria": "правила",
+            "status": "todo",
+        },
         {"id": "s3", "title": "сравнить", "done_criteria": "таблица", "status": "todo"},
     ]
     after = apply_replan(plan, updates)
@@ -370,7 +432,14 @@ async def test_rebuild_goes_back_to_planner():
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "queue_application", "args": {"vacancy_id": "demo-101", "cover_note": "Здравствуйте! Готов обсудить позицию backend."}, "id": "c1"}
+                    {
+                        "name": "queue_application",
+                        "args": {
+                            "vacancy_id": "demo-101",
+                            "cover_note": "Здравствуйте! Готов обсудить позицию backend.",
+                        },
+                        "id": "c1",
+                    }
                 ],
             ),
             AIMessage(content="Действие ждёт подтверждения."),
@@ -400,7 +469,9 @@ async def test_memory_checkpointer_keeps_state():
     )
     executor = ScriptedChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]),
+            AIMessage(
+                content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]
+            ),
             AIMessage(content="Есть варианты."),
         ]
     )
@@ -425,7 +496,9 @@ async def test_memory_checkpointer_keeps_state():
 def test_render_and_limits():
     """Мелочи состояния: рендер плана, потолок рекурсии шага, stop-reason по счётчикам."""
     plan = [
-        PlanStep(id="s1", title="поиск", done_criteria="список", status="done", result="3 вакансии"),
+        PlanStep(
+            id="s1", title="поиск", done_criteria="список", status="done", result="3 вакансии"
+        ),
         PlanStep(id="s2", title="правила", done_criteria="правила"),
     ]
     text = render_plan(plan)
@@ -435,7 +508,9 @@ def test_render_and_limits():
     state = _state_with(plan, model_calls=limits.max_model_calls)
     assert derive_stop_reason(state, limits) == "model_budget"
     state_open = _state_with(plan, steps_taken=1)
-    assert derive_stop_reason(state_open, limits) == "plan_exhausted", "план не закрыт — честный итог"
+    assert derive_stop_reason(state_open, limits) == "plan_exhausted", (
+        "план не закрыт — честный итог"
+    )
     state_finished = _state_with(plan, steps_taken=1, replan_action="finish")
     assert derive_stop_reason(state_finished, limits) == "answered"
 

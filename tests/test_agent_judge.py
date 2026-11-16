@@ -45,8 +45,7 @@ def _judge_json(verdict: str, reason: str = "решение по смыслу") 
 def _plan_spec(*steps: tuple[str, str, str]) -> dict[str, Any]:
     return {
         "steps": [
-            {"id": sid, "title": title, "done_criteria": criteria}
-            for sid, title, criteria in steps
+            {"id": sid, "title": title, "done_criteria": criteria} for sid, title, criteria in steps
         ],
         "note": "цель понята",
     }
@@ -152,9 +151,7 @@ def _search_then(answer: AIMessage) -> ScriptedChatModel:
         [
             AIMessage(
                 content="",
-                tool_calls=[
-                    {"name": "search_vacancies", "args": {"query": "kestrel"}, "id": "c1"}
-                ],
+                tool_calls=[{"name": "search_vacancies", "args": {"query": "kestrel"}, "id": "c1"}],
             ),
             answer,
         ]
@@ -181,10 +178,12 @@ def _graph_inputs():
 
 
 def test_extract_quotes_and_failures():
-    """Код-проверка цитат: «…» и парные "…", минимум 8 знаков, проверка подстрокой."""
-    text = "Ловушка «нужен ВНЖ ЕС» и требование \"Right to work in the EU\" в тексте."
+    """Код-проверка цитат: только «…» (как требует промпт шага), от 8 знаков, подстрокой."""
+    text = "Ловушка «нужен ВНЖ ЕС» и требование «Right to work in the EU» в тексте."
     quotes = extract_quotes(text)
     assert quotes == ["нужен ВНЖ ЕС", "Right to work in the EU"]
+    # Парные "…" — это JSON сводок инструментов, а не цитаты (стенд, запуски 17 и 21).
+    assert extract_quotes('search_vacancies: {"items": [{"id": "demo-101", "title": "x"}]}') == []
 
     evidence = ["Условия: нужен ВНЖ ЕС или право работать в ЕС."]
     assert quote_failures_of(quotes, evidence) == ["Right to work in the EU"]
@@ -205,7 +204,7 @@ def test_quote_check_missing_quote():
 
 
 def test_final_answer_text_prefers_model_answer():
-    """Судья смотрит на ответ модели шага, без ответа — на сводки."""
+    """Судья смотрит на последний ответ модели; машинные сводки итогом не считаются."""
     obs = Observation(
         step_id="s1",
         index=1,
@@ -214,10 +213,35 @@ def test_final_answer_text_prefers_model_answer():
         answer=ANSWER_WITH_QUOTE,
     )
     assert final_answer_text(_state(observations=[obs])) == ANSWER_WITH_QUOTE
-    assert (
-        final_answer_text(_state(observations=[obs.model_copy(update={"answer": None})]))
-        == "поиск: найдена Applied AI Engineer"
+    silent = Observation(
+        step_id="s2", index=2, tools=["read_profile"], summaries=['read_profile: {"a": 1}']
     )
+    assert final_answer_text(_state(observations=[obs, silent])) == ANSWER_WITH_QUOTE
+    assert final_answer_text(_state(observations=[silent])) == ""
+
+
+def test_final_answer_after_action_is_what_human_sees():
+    """Запуск кончился действием после «да»: итог — что выполнено и что сделано до этого."""
+    plan = [
+        PlanStep(
+            id="s1",
+            title="Выбрать вакансию",
+            done_criteria="выбрана",
+            status="done",
+            result="Лучшая — «Applied AI Engineer»",
+        )
+    ]
+    action = Observation(
+        step_id="s2",
+        index=2,
+        tools=["queue_application"],
+        summaries=["queue_application: выполнено после подтверждения человеком"],
+        answer="Отклик на «Applied AI Engineer» в Kestrel Analytics поставлен в очередь.",
+        action_done=True,
+    )
+    text = final_answer_text(_state(plan=plan, observations=[action]))
+    assert text.startswith("Отклик на «Applied AI Engineer»")
+    assert "Выбрать вакансию" in text and "Что удалось" in text
 
 
 def test_evidence_excludes_agent_answers():
@@ -258,9 +282,7 @@ def test_recorder_keeps_tool_evidence_quotes():
     assert "Удалённо из любой точки мира" in obs.evidence_quotes
     assert "коротко" not in obs.evidence_quotes, "меньше 8 знаков не цитата"
 
-    cited = obs.model_copy(
-        update={"answer": "Ловушка: «Right to work in the EU required»."}
-    )
+    cited = obs.model_copy(update={"answer": "Ловушка: «Right to work in the EU required»."})
     failures, _, _ = quote_check(_state(observations=[cited]))
     assert failures == [], "дословная цитата из инструмента проходит код-проверку"
 
@@ -385,7 +407,11 @@ async def test_step_judge_pass_and_fail_in_check():
 
     plan = [PlanStep(id="s1", title="Найти вакансии", done_criteria="список вакансий")]
     obs = Observation(
-        step_id="s1", index=1, tools=["search_vacancies"], summaries=["поиск: найдена Applied AI Engineer"], answer="нашёл"
+        step_id="s1",
+        index=1,
+        tools=["search_vacancies"],
+        summaries=["поиск: найдена Applied AI Engineer"],
+        answer="нашёл",
     )
 
     judge_pass = ScriptedChatModel(responses=[_judge_json("pass", "результат отвечает шагу")])
@@ -462,9 +488,7 @@ async def test_final_judge_fail_exhausts_reworks():
     planner, replanner = _graph_inputs()
     executor = _search_then(AIMessage(content=ANSWER_WITHOUT_QUOTE))
     judge_step = ScriptedChatModel(responses=[_judge_json("pass", "результат отвечает шагу")])
-    judge_final = ScriptedChatModel(
-        responses=[_judge_json("fail", "вывод без опоры-цитаты")]
-    )
+    judge_final = ScriptedChatModel(responses=[_judge_json("fail", "вывод без опоры-цитаты")])
     state = await run_agent_goal(
         GOAL,
         deps=_deps(
@@ -499,8 +523,12 @@ async def test_final_judge_crash_continues_honestly():
     assert state["reworks_used"] == 0
 
 
-async def test_planner_receives_judge_remark():
-    """Замечание судьи попадает во вход планировщика на доработке (A-5)."""
+async def test_rework_is_one_step_with_judge_remark():
+    """Доработка итога — один шаг в текущем плане с замечанием судьи, без пересборки плана.
+
+    До 16.11 провал отправлял в планировщик, тот собирал план с нуля и повторял всю работу
+    (стенд, запуски 16, 17, 21 — бюджет запуска кончался на доработке).
+    """
     planner = CapturingChatModel(
         responses=[
             AIMessage(content=json.dumps(_plan_spec(("s1", "Найти вакансии", "список вакансий"))))
@@ -518,9 +546,7 @@ async def test_planner_receives_judge_remark():
         [
             AIMessage(
                 content="",
-                tool_calls=[
-                    {"name": "search_vacancies", "args": {"query": "kestrel"}, "id": "c1"}
-                ],
+                tool_calls=[{"name": "search_vacancies", "args": {"query": "kestrel"}, "id": "c1"}],
             ),
             AIMessage(content=ANSWER_WITHOUT_QUOTE),
             AIMessage(content=ANSWER_WITH_QUOTE),
@@ -533,19 +559,27 @@ async def test_planner_receives_judge_remark():
             _judge_json("pass", "теперь с цитатой"),
         ]
     )
+    collector = EventCollector()
     state = await run_agent_goal(
         GOAL,
-        deps=_deps(planner, executor, replanner, judge_step=judge_step, judge_final=judge_final),
+        deps=_deps(
+            planner,
+            executor,
+            replanner,
+            judge_step=judge_step,
+            judge_final=judge_final,
+            observer=collector,
+        ),
     )
     assert state["stop_reason"] == "answered"
     assert state["reworks_used"] == 1
-    judge_calls = [
-        prompt
-        for prompt in planner.seen_prompts
-        if isinstance(prompt, str) and "Замечание судьи" in prompt
-    ]
-    assert len(judge_calls) >= 1, "планировщик увидел замечание судьи на доработке"
-    assert any("вывод без опоры-цитаты" in call for call in judge_calls), "причина во входе"
+    assert [s.id for s in state["plan"]] == ["s1", "r1"], "сделанный шаг остался, доработка — шагом"
+    assert all(s.status == "done" for s in state["plan"])
+    assert "вывод без опоры-цитаты" in state["plan"][1].done_criteria, "замечание судьи в критерии"
+    assert len(planner.seen_prompts) == 2, "планировщик вызван один раз (system + human)"
+    reworks = [e for e in collector.of_type("plan_changed") if e.payload["action"] == "rework"]
+    assert reworks and reworks[0].payload["diff"]["changes"][0].startswith("+ r1:")
+    assert state["answer"].startswith(ANSWER_WITH_QUOTE)
 
 
 async def test_graph_without_judges_keeps_old_semantics():
@@ -553,9 +587,7 @@ async def test_graph_without_judges_keeps_old_semantics():
     planner, replanner = _graph_inputs()
     executor = _search_then(AIMessage(content=ANSWER_WITH_QUOTE))
     collector = EventCollector()
-    state = await run_agent_goal(
-        GOAL, deps=_deps(planner, executor, replanner, observer=collector)
-    )
+    state = await run_agent_goal(GOAL, deps=_deps(planner, executor, replanner, observer=collector))
     assert state["stop_reason"] == "answered"
     verdicts = collector.of_type("judge_verdict")
     assert verdicts, "событие judge_verdict отдаётся даже без судей"
@@ -566,9 +598,7 @@ async def test_graph_without_judges_keeps_old_semantics():
 async def test_fabricated_quote_fails_even_without_judge_model():
     """Выдуманная цитата ловится кодом и без модели-судьи: доработка, потом judge_failed."""
     planner, replanner = _graph_inputs()
-    executor = _search_then(
-        AIMessage(content="Лучший вариант — «Выдуманный ответ из головы».")
-    )
+    executor = _search_then(AIMessage(content="Лучший вариант — «Выдуманный ответ из головы»."))
     state = await run_agent_goal(GOAL, deps=_deps(planner, executor, replanner))
     assert state["stop_reason"] == "judge_failed", "код-проверка детерминирована без судьи"
     assert state["judge_verdict"]["verdict"] == "fail"
@@ -583,9 +613,7 @@ async def test_judge_state_survives_checkpoint():
     executor = _search_then(AIMessage(content=ANSWER_WITH_QUOTE))
     judge_step = ScriptedChatModel(responses=[_judge_json("pass", "результат отвечает шагу")])
     judge_final = ScriptedChatModel(responses=[_judge_json("pass", "цель покрыта")])
-    deps = _deps(
-        planner, executor, replanner, judge_step=judge_step, judge_final=judge_final
-    )
+    deps = _deps(planner, executor, replanner, judge_step=judge_step, judge_final=judge_final)
     graph = build_agent_graph(deps, checkpointer=MemorySaver())
     await graph.ainvoke({"goal": GOAL}, config={"configurable": {"thread_id": "t-judge"}})
     snapshot = await graph.aget_state({"configurable": {"thread_id": "t-judge"}})

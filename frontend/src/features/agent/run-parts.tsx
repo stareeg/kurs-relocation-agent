@@ -9,8 +9,11 @@ import {
   ACTION_LABEL,
   PARAM_LABEL,
   PLAN_CHANGE_LABEL,
+  planChangeLines,
   plural,
+  stepKey,
   vacancyName,
+  vacancyPrefix,
   type LogRow,
   type VacancyRef,
 } from "./run-summary"
@@ -27,7 +30,7 @@ function LogMarker({ kind }: { kind: LogRow["kind"] }) {
   return <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-slate-300" />
 }
 
-export function RunLog({ rows }: { rows: LogRow[] }) {
+export function RunLog({ rows, vacancies }: { rows: LogRow[]; vacancies?: Map<string, VacancyRef> }) {
   return (
     <ol className="space-y-1.5 text-sm">
       {rows.map((row) =>
@@ -45,7 +48,10 @@ export function RunLog({ rows }: { rows: LogRow[] }) {
             )}
           >
             <LogMarker kind={row.kind} />
-            <span className="min-w-0 break-words">
+            <span
+              className="line-clamp-3 min-w-0 break-words"
+              title={row.detail && row.detail.length > 140 ? row.detail : undefined}
+            >
               <span
                 className={cn(
                   "font-medium",
@@ -56,7 +62,15 @@ export function RunLog({ rows }: { rows: LogRow[] }) {
               >
                 {row.title}
               </span>
-              {row.detail ? <span className="text-muted-foreground"> — {row.detail}</span> : null}
+              {row.detail ? (
+                <span className="text-muted-foreground">
+                  {" — "}
+                  {row.kind === "tool" || row.kind === "tool-error"
+                    ? vacancyPrefix(row.vacancyId, vacancies)
+                    : ""}
+                  {row.detail}
+                </span>
+              ) : null}
             </span>
           </li>
         ),
@@ -97,11 +111,13 @@ export function Plan({
   currentId,
   live,
   rowsByStep,
+  vacancies,
 }: {
   plan: RunPlanItem[]
   currentId: string | null
   live: boolean
   rowsByStep: Map<string, LogRow[]>
+  vacancies?: Map<string, VacancyRef>
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   const toggle = (id: string) =>
@@ -122,7 +138,8 @@ export function Plan({
               : live && step.id === currentId
                 ? "current"
                 : "todo"
-        const rows = rowsByStep.get(step.id) ?? []
+        // «Шаг закрыт» повторяет галочку у самого шага — внутри шага не показываем.
+        const rows = (rowsByStep.get(stepKey(step.id, step.title)) ?? []).filter((r) => r.kind !== "check")
         const calls = rows.filter((r) => r.kind === "tool" || r.kind === "tool-error").length
         const hasError = rows.some((r) => r.kind === "tool-error" || r.kind === "judge-fail")
         const open = expanded.has(step.id)
@@ -171,7 +188,7 @@ export function Plan({
             )}
             {open ? (
               <div className="mb-2 ml-[1.875rem] mt-1 border-l border-border pl-3">
-                <RunLog rows={rows} />
+                <RunLog rows={rows} vacancies={vacancies} />
               </div>
             ) : null}
           </li>
@@ -181,29 +198,45 @@ export function Plan({
   )
 }
 
-function diffLineColor(line: string): string {
-  if (line.startsWith("+")) return "text-status-strong-fg"
-  if (line.startsWith("-")) return "text-muted-foreground line-through"
-  return "text-foreground"
-}
+const CHANGE_WORD = { add: "Добавлен", drop: "Убран", edit: "Изменён" } as const
 
 export function PlanChanges({ changes }: { changes: PlanChange[] }) {
-  if (changes.length === 0) return null
+  // Изменение без строк «добавлен / убран / изменён» (старые события со сменой статуса)
+  // ничего не рассказывает о перестройке — его не показываем.
+  const shown = changes
+    .map((change) => ({ change, lines: planChangeLines(change.changes) }))
+    .filter(({ lines }) => lines.length > 0)
+  if (shown.length === 0) return null
   return (
-    <div className="space-y-2 rounded-lg bg-muted px-3 py-2.5">
-      {changes.map((change) => (
-        <div key={change.id} className="space-y-0.5 text-sm">
+    <div className="space-y-2.5 rounded-lg bg-muted px-3 py-2.5">
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Как менялся план
+      </p>
+      {shown.map(({ change, lines }) => (
+        <div key={change.id} className="space-y-1 text-sm">
           <div className="font-medium text-foreground">
             {PLAN_CHANGE_LABEL[change.action] ?? change.action}
-            {change.reason ? (
-              <span className="font-normal text-muted-foreground"> — {change.reason}</span>
-            ) : null}
           </div>
-          {change.changes.map((line, i) => (
-            <div key={i} className={cn("break-words font-mono text-xs", diffLineColor(line))}>
-              {line}
-            </div>
-          ))}
+          {change.reason ? (
+            <p className="line-clamp-2 text-xs text-muted-foreground" title={change.reason}>
+              {change.reason}
+            </p>
+          ) : null}
+          <ul className="space-y-0.5 text-xs">
+            {lines.map((line, i) => (
+              <li
+                key={i}
+                className={cn(
+                  "break-words",
+                  line.kind === "add" && "text-status-strong-fg",
+                  line.kind === "drop" && "text-muted-foreground",
+                  line.kind === "edit" && "text-foreground",
+                )}
+              >
+                {CHANGE_WORD[line.kind]} шаг: {line.kind === "drop" ? <s>{line.text}</s> : line.text}
+              </li>
+            ))}
+          </ul>
         </div>
       ))}
     </div>

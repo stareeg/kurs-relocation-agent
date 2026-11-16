@@ -4,9 +4,12 @@ import type { RunView } from "./use-agent-runs"
 import {
   currentActivity,
   findQuoteVacancy,
+  planChangeLines,
   planProgress,
   runVacancies,
+  stepKey,
   summarize,
+  toolText,
   type VacancyRef,
 } from "./run-summary"
 
@@ -77,7 +80,57 @@ describe("summarize", () => {
     expect(s.runScores.get("demo-102")).toBe(88)
     expect(s.finalVerdict).toEqual({ verdict: "pass", reason: "цитаты сходятся" })
     // Вызовы шага s2 лежат под ним — шаг в панели раскрывается своими вызовами.
-    expect(s.rowsByStep.get("s2")?.filter((r) => r.kind === "tool-error")).toHaveLength(1)
+    expect(
+      s.rowsByStep.get(stepKey("s2", "Проверить условия"))?.filter((r) => r.kind === "tool-error"),
+    ).toHaveLength(1)
+  })
+
+  it("вызов без строки brief: главное из сводки-JSON старых запусков, а не сам JSON", () => {
+    const s = summarize(events)
+    const score = s.tools.find((t) => t.key === "score_vacancy")!
+    expect(score.calls[0]).toMatchObject({ text: "88 из 100, можно откликаться", vacancyId: "demo-102" })
+    const search = s.tools.find((t) => t.key === "search_vacancies")!
+    expect(search.calls[0].text).not.toContain("{")
+    expect(toolText({ tool: "score_vacancy", brief: "86 из 100, откликаться", summary: "x" })).toBe(
+      "86 из 100, откликаться",
+    )
+  })
+
+  it("шаги с одинаковым id из разных планов не смешивают вызовы", () => {
+    const s = summarize([
+      ev(1, "step_started", { index: 1, step_id: "s1", title: "Найти вакансии" }),
+      ev(2, "tool_called", { step_id: "s1", tool: "search_vacancies", ok: true, summary: "x" }),
+      ev(3, "step_started", { index: 2, step_id: "s1", title: "Запустить сбор" }),
+      ev(4, "tool_called", { step_id: "s1", tool: "read_profile", ok: true, summary: "y" }),
+    ])
+    expect(s.rowsByStep.get(stepKey("s1", "Найти вакансии"))).toHaveLength(1)
+    expect(s.rowsByStep.get(stepKey("s1", "Запустить сбор"))).toHaveLength(1)
+  })
+
+  it("журнал без пустых строк: «шаг закрыт» и «продолжать» не показываются", () => {
+    const s = summarize([
+      ev(1, "step_checked", { step_id: "s1", done: true }),
+      ev(2, "plan_changed", { action: "continue", reason: "идём дальше" }),
+      ev(3, "plan_changed", { action: "continue", reason: "убрал шаг", diff: { changes: ["- s2: Откликнуться"] } }),
+    ])
+    expect(s.rows.map((r) => r.title)).toEqual(["План скорректирован"])
+  })
+})
+
+describe("planChangeLines", () => {
+  it("человеческие строки; смена статуса правкой не считается", () => {
+    expect(
+      planChangeLines([
+        "~ s1: done → todo",
+        "+ s3: Найти похожую",
+        "- s2: Откликнуться",
+        "~ s4: Оценить → Оценить и выбрать",
+      ]),
+    ).toEqual([
+      { kind: "add", text: "Найти похожую" },
+      { kind: "drop", text: "Откликнуться" },
+      { kind: "edit", text: "Оценить → Оценить и выбрать" },
+    ])
   })
 })
 

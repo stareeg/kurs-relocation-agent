@@ -56,6 +56,7 @@ from core.app.agent.state import (
 )
 from core.app.agent.subagents import COUNTRY_RESEARCHER, VACANCY_ASSESSOR
 from core.app.agent.toolkit import execute_tool
+from core.app.agent.tools import tool_brief
 from core.platform.llm.openrouter_chat import _StructuredOutputRunnable
 
 logger = logging.getLogger(__name__)
@@ -130,11 +131,27 @@ def default_deps(account_id: int = 1) -> AgentDeps:
     )
 
 
+_SERVICE_ERRORS = frozenset({"unavailable", "timeout", "busy"})
+"""Сбои сервиса: повтор шага может помочь, судить нечего."""
+
+
+def _fails_without_judge(observation: Observation) -> bool:
+    """Шаг проваливается проверкой без модели: сбой сервиса, обрыв шага, нет ответа."""
+    if observation.error is None:
+        return False
+    if observation.error_type is None or observation.error_type in _SERVICE_ERRORS:
+        return True
+    return not observation.answer
+
+
 def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None = None) -> Any:
     """Узел `check` (A-1 эвристика + A-5 модельная самопроверка шага, уровень 1).
 
-    Наблюдение с ошибкой — провал без вызова модели (дёшево и детерминированно), шаг
-    остаётся `todo`, растёт счётчик неудач. Наблюдение без ошибки проверяет модель-судья:
+    Сбой сервиса (`unavailable`/`timeout`/`busy`), прерванный шаг или ошибка без ответа
+    модели — провал без вызова модели (дёшево и детерминированно), шаг остаётся `todo`,
+    растёт счётчик неудач. Ошибка модели с ответом шага (`not_found`, `validation`: «такой
+    вакансии нет» — тоже результат) идёт судье вместе с текстом ошибки: повтор того же
+    шага её не исправит. Наблюдение без ошибки проверяет модель-судья:
     отвечает ли результат шагу плана; `pass` — шаг закрыт с доказательством в плане,
     `fail` — шаг остаётся `todo` (ребро ведёт на повтор шага), `unverified` — судья
     недоступен: прежнее поведение (шаг закрыт), вердикт идёт как данные. После
@@ -148,7 +165,7 @@ def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None 
         last = observations[-1]
         plan: list[PlanStep] = list(state.get("plan") or [])
         budget = budget_from(config)
-        if last.error is not None:
+        if _fails_without_judge(last):
             verdict = JudgeVerdict(
                 level="step", verdict="fail", reason=f"ошибка инструмента: {last.error}"
             )
@@ -256,6 +273,23 @@ def apply_edits(
     return merged, changed
 
 
+def _action_answer(action: str, result: dict[str, Any], who: str) -> str:
+    """Итог выполненного действия человеческим текстом: его читают лента и судья итога.
+
+    Без него последний шаг запуска (действие после «да») не давал ответа, и судья итога
+    склеивал машинные сводки инструментов — JSON с кавычками выдавал за «цитаты» и
+    отправлял выполненный запуск на доработку с нуля (стенд, запуски 17 и 21).
+    """
+    title = str(result.get("title") or result.get("vacancy_id") or "").strip()
+    company = str(result.get("company") or "").strip()
+    target = f"«{title}»" if title else "вакансию"
+    if company:
+        target += f" в {company}"
+    if action == "queue_application":
+        return f"Отклик на {target} поставлен в очередь {who}."
+    return f"Действие {action} по {target} выполнено {who}."
+
+
 def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pausable: bool) -> Any:
     """Узел `confirm` (A-3): пауза на подтверждении действия.
 
@@ -331,6 +365,9 @@ def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pau
                 tools=[action],
                 summaries=[summary],
                 error=error.message if error else None,
+                error_type=error.type if error else None,
+                answer=None if error else _action_answer(action, result, who),
+                action_done=error is None,
             )
             if observer is not None:
                 observer.emit(
@@ -342,7 +379,10 @@ def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pau
                             "tool": action,
                             "ok": error is None,
                             "summary": summary,
+                            "brief": None if error else (tool_brief(action, result) or None),
+                            "vacancy_id": params.get("vacancy_id"),
                             "error": error.message if error else None,
+                            "error_type": error.type if error else None,
                         },
                         node="confirm",
                     )
@@ -497,16 +537,21 @@ def route_after_replan(
     return "step"
 
 
-def route_after_judge(state: AgentState, limits: RunLimits) -> Literal["plan", "finalize"]:
-    """После судьи итога (A-5): провал — на доработку через планировщик, исчерпание — финал.
+def route_after_judge(state: AgentState, limits: RunLimits) -> Literal["step", "finalize"]:
+    """После судьи итога (A-5): провал — шаг доработки итога, исчерпание — финал.
 
-    Предел доработок считает узел `judge`: когда `reworks_used` дошёл до
-    `max_judge_reworks`, он сам ставит `stop_reason="judge_failed"` — тогда финал.
+    Шаг доработки узел `judge` сам дописывает в план (`rework_step`). Предел доработок
+    тоже считает он: исчерпание — `stop_reason="judge_failed"`, после выполненного
+    действия — `answered` без доработки; в обоих случаях финал.
     """
     if state.get("stop_reason") is not None:
         return "finalize"
-    if (state.get("judge_verdict") or {}).get("verdict") == "fail":
-        return "plan"
+    if over_budget(state, limits) or state.get("steps_taken", 0) >= limits.max_steps:
+        return "finalize"  # доработке не на что: финал честно назовёт исчерпанный предел
+    if (state.get("judge_verdict") or {}).get("verdict") == "fail" and plan_has_open_steps(
+        state.get("plan") or []
+    ):
+        return "step"
     return "finalize"
 
 
@@ -706,7 +751,7 @@ def build_agent_graph(
     graph.add_conditional_edges(
         "judge",
         lambda s: route_after_judge(s, limits),
-        {"plan": "plan", "finalize": "finalize"},
+        {"step": "step", "finalize": "finalize"},
     )
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer)

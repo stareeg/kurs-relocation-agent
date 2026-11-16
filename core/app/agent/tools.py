@@ -25,6 +25,7 @@ import dataclasses
 import functools
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
@@ -54,8 +55,14 @@ from core.domains.profile.international import derive_international_readiness
 from core.domains.profile.structured_store import read_resume_data_for_account
 from core.kernel.errors import DomainError, InvalidInput, NotFound, RateLimited
 
+logger = logging.getLogger(__name__)
+
 MAX_RESULT_ITEMS = 5
 """Потолок выдачи поиска: длинные списки съедают контекст шага (риски PLAN 3)."""
+_QUERY_STOPWORDS = frozenset(
+    {"на", "по", "из", "для", "от", "до", "или", "не", "с", "в", "и", "the", "and", "for", "with"}
+)
+"""Служебные слова запроса: совпадают почти с любой вакансией и только шумят."""
 _MAX_PROFILE_SKILLS = 15
 _MAX_EVIDENCE_QUOTES = 24
 """Потолок цитат шага: полные результаты не тащим, только опору для судьи (A-5)."""
@@ -77,6 +84,7 @@ class SearchVacanciesArgs(BaseModel):
         default="",
         description=(
             "Слова из названия, компании или описания вакансии, например «backend python». "
+            "Подходит вакансия хотя бы с одним словом, первыми — где совпало больше. "
             "Пусто — вернуть все вакансии базы."
         ),
     )
@@ -89,12 +97,15 @@ class SearchVacanciesArgs(BaseModel):
 
 
 class VacancyIdArgs(BaseModel):
-    """Аргумент-один id: вакансия должна прийти из search_vacancies."""
+    """Аргумент-один id: из search_vacancies или названный человеком в цели.
+
+    Названный id проверяется по базе аккаунта: чужой или выдуманный — `not_found`.
+    """
 
     vacancy_id: str = Field(
         min_length=2,
         max_length=64,
-        description="id вакансии из search_vacancies, например demo-101",
+        description="id вакансии из search_vacancies или из цели человека, например demo-101",
     )
 
 
@@ -162,6 +173,9 @@ def as_tool_data(
         except DomainError as exc:
             return error_payload(_domain_tool_error(exc))
         except Exception as exc:  # noqa: BLE001 — сбой сервиса тоже наблюдение, не падение
+            # Модель получит текст ошибки, а стек нужен человеку: без него причина сбоя
+            # (база, вызов модели внутри инструмента) в логах API не видна.
+            logger.warning("инструмент %s: сбой сервиса", fn.__name__, exc_info=True)
             return error_payload(
                 ToolError(
                     type="unavailable",
@@ -171,6 +185,73 @@ def as_tool_data(
             )
 
     return wrapper
+
+
+# ------------------------------------------------------------------- строка для экрана
+
+_RECOMMENDATION_TEXT = {
+    "strong_apply": "откликаться",
+    "apply": "можно откликаться",
+    "maybe": "под вопросом",
+    "skip": "не подходит",
+}
+_ENGAGEMENT_TEXT = {
+    "employment": "найм в штат",
+    "contractor": "контракт",
+    "b2b": "B2B",
+    "freelance": "фриланс",
+    "internship": "стажировка",
+}
+_GEO_TEXT = {
+    "worldwide": "из любой страны",
+    "region": "из региона",
+    "country_list": "из списка стран",
+    "single_city": "из одного города",
+}
+_BRIEF_TITLES = 3
+
+
+def tool_brief(tool: str, result: dict[str, Any]) -> str:
+    """Что вернул инструмент — одной строкой для человека (панель «Ход работы»).
+
+    Модель и судья по-прежнему получают результат целиком; экран показывал сводку-JSON,
+    обрезанную на 400 знаках, и её было не прочитать. Пусто — пусть экран берёт сводку.
+    """
+    if result.get("cancelled"):
+        return "ждёт подтверждения человека"
+    if tool == "search_vacancies":
+        total = int(result.get("total") or 0)
+        if total == 0:
+            return "ничего не найдено"
+        titles = [str(i.get("title")) for i in result.get("items") or [] if i.get("title")]
+        shown = ", ".join(titles[:_BRIEF_TITLES])
+        rest = total - min(len(titles), _BRIEF_TITLES)
+        return f"найдено {total}: {shown}" + (f" и ещё {rest}" if rest > 0 else "")
+    if tool == "read_profile":
+        if result.get("hint"):
+            return "профиль пуст"
+        parts = [str(result.get(k)) for k in ("position", "city") if result.get(k)]
+        return "профиль: " + ", ".join(parts) if parts else "профиль прочитан"
+    if tool == "read_work_terms":
+        parts = [
+            _ENGAGEMENT_TEXT.get(str(result.get("engagement")), ""),
+            _GEO_TEXT.get(str(result.get("geo_scope")), ""),
+            "нужен ВНЖ" if result.get("residency_required") else "",
+            str(result.get("currency") or ""),
+        ]
+        known = [part for part in parts if part]
+        quotes = len(result.get("evidence") or [])
+        text = ", ".join(known) if known else "условия в тексте не указаны"
+        return f"{text}; цитат: {quotes}"
+    if tool == "score_vacancy":
+        score = result.get("overall_score")
+        rec = _RECOMMENDATION_TEXT.get(str(result.get("recommendation")), "")
+        return f"{score} из 100" + (f", {rec}" if rec else "")
+    if tool == "write_cover_letter":
+        return f"письмо готово, {len(str(result.get('letter') or ''))} знаков"
+    if tool == "queue_application":
+        return "отклик в очереди" if result.get("queued") else ""
+    return ""
 
 
 # ------------------------------------------------------------------- проекции
@@ -198,19 +279,26 @@ def _job_card(job: Any) -> dict[str, Any]:
     }
 
 
-def _search_hint(found: int, shown: int) -> dict[str, Any]:
+def _search_hint(found: int, shown: int, base: int) -> dict[str, Any]:
     if found > shown:
         return {
             "hint": (
-                f"показано {shown} из {found}: поднимите min_overall_score, добавьте слова "
-                "в query или сузьте формат работы"
+                f"показано {shown} из {found}, первыми — где больше слов запроса: поднимите "
+                "min_overall_score или сузьте формат работы"
+            )
+        }
+    if found == 0 and base == 0:
+        return {
+            "hint": (
+                "в базе аккаунта нет вакансий; собрать их может только человек расширением "
+                "браузера, сам агент сбор не запускает — скажи об этом честно"
             )
         }
     if found == 0:
         return {
             "hint": (
-                "подходящих вакансий в базе нет: ослабьте фильтры; если база пуста — "
-                "попросите запустить сбор в расширении"
+                f"вакансий в базе: {base}, но ни одна не подошла; ослабьте фильтры — оставьте в "
+                "query 1–2 ключевых слова или снимите формат и балл"
             )
         }
     return {}
@@ -306,15 +394,22 @@ async def search_vacancies(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
         limit=_SEARCH_SCAN_LIMIT,
         exclude_skipped=True,
     )
-    tokens = [token for token in args.query.lower().split() if token]
-    found = []
-    for job in jobs:
+    tokens = [
+        token
+        for token in args.query.lower().split()
+        if len(token) >= 2 and token not in _QUERY_STOPWORDS
+    ]
+    base = 0
+    ranked: list[tuple[int, int, Any]] = []
+    for position, job in enumerate(jobs):
         if job.is_archived:
             continue
+        base += 1
         if args.work_format and job.work_format != args.work_format:
             continue
         if args.min_overall_score and (job.overall_score or 0) < args.min_overall_score:
             continue
+        hits = 0
         if tokens:
             haystack = " ".join(
                 filter(
@@ -322,15 +417,21 @@ async def search_vacancies(args: BaseModel, ctx: ToolContext) -> dict[str, Any]:
                     (job.title, job.company, job.area, job.vacancy_text, " ".join(job.skills)),
                 )
             ).lower()
-            if not all(token in haystack for token in tokens):
+            hits = sum(1 for token in tokens if token in haystack)
+            if hits == 0:
                 continue
-        found.append(job)
+        ranked.append((hits, position, job))
+    # Хотя бы одно слово запроса; первыми — где совпало больше слов. Раньше требовались
+    # все слова: длинный запрос модели давал пусто, и план уходил в несуществующий
+    # «сбор вакансий» (стенд, запуски 17 и 21).
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    found = [job for _, _, job in ranked]
     items = [_job_card(job) for job in found[:MAX_RESULT_ITEMS]]
     return {
         "items": items,
         "total": len(found),
         "shown": len(items),
-        **_search_hint(len(found), len(items)),
+        **_search_hint(len(found), len(items), base),
     }
 
 
@@ -485,7 +586,8 @@ TOOLS: tuple[Tool, ...] = (
         description=(
             "Возвращает условия найма вакансии с цитатами из её текста: формат занятости "
             "(employment/B2B), где можно работать (гео, резидентство), часовой пояс и "
-            "пересечение часов, валюта и ставка. vacancy_id бери из search_vacancies. "
+            "пересечение часов, валюта и ставка. vacancy_id бери из search_vacancies или "
+            "из цели, если человек сам назвал id вакансии. "
             "Используй, чтобы проверить ловушки: «Right to work in the EU», гибрид вместо "
             "удалёнки, вилка не в той валюте. Не выдумывай условия, которых нет в цитатах."
         ),
@@ -571,8 +673,20 @@ class StepRecorder:
         self.summaries: list[str] = []
         self.evidence_quotes: list[str] = []
         self.last_error: str | None = None
+        self.last_error_type: str | None = None
+        # Открытые ошибки по инструментам: успешный повтор того же инструмента в этом шаге
+        # её снимает. Иначе шаг, где модель сама исправилась (не тот id → верный id),
+        # проваливался проверкой без модели и повторялся впустую (стенд, запуск 21).
+        self._open_errors: dict[str, tuple[str, str | None]] = {}
         self.vacancies: list[dict[str, Any]] = []
         self.pending: ConfirmationCard | None = None
+
+    def _sync_last_error(self) -> None:
+        if self._open_errors:
+            message, kind = list(self._open_errors.values())[-1]
+            self.last_error, self.last_error_type = message, kind
+        else:
+            self.last_error, self.last_error_type = None, None
 
     def record(
         self,
@@ -580,16 +694,28 @@ class StepRecorder:
         result: dict[str, Any],
         error: dict[str, Any] | None,
     ) -> None:
-        """Запомнить один вызов: имя, короткую сводку, ошибку, вакансии; событие наружу."""
+        """Запомнить один вызов: имя, короткую сводку, ошибку, вакансии; событие наружу.
+
+        `error` — поля `ToolError` (`type`, `message`, `hint`). Обёртка для модели
+        (`{"error": {...}}`) тоже принимается: до 16.11 сюда шла она, и текст ошибки
+        терялся — в журнале и на экране стояло «ошибка инструмента» без причины.
+        """
         self.tools.append(tool.name)
+        if error is not None and isinstance(error.get("error"), dict):
+            error = error["error"]
+        message: str | None = None
         if error is not None:
-            message = str(error.get("message", "ошибка инструмента"))
+            message = str(error.get("message") or "ошибка инструмента")
             self.summaries.append(f"{tool.name}: ошибка — {message}")
-            self.last_error = message
+            self._open_errors.pop(tool.name, None)
+            self._open_errors[tool.name] = (message, str(error.get("type") or "") or None)
+            self._sync_last_error()
         elif result.get("cancelled"):
             # Действие отложено: подтвердит человек в узле confirm (A-3), это не ошибка.
             self.summaries.append(f"{tool.name}: действие отложено до подтверждения человека")
         else:
+            if self._open_errors.pop(tool.name, None) is not None:
+                self._sync_last_error()
             self.summaries.append(f"{tool.name}: {short(result)}")
             items = result.get("items")
             if isinstance(items, list):
@@ -617,7 +743,10 @@ class StepRecorder:
                 "tool": tool.name,
                 "ok": error is None,
                 "summary": self.summaries[-1],
-                "error": error.get("message") if error else None,
+                "brief": None if error is not None else (tool_brief(tool.name, result) or None),
+                "vacancy_id": result.get("vacancy_id") if isinstance(result, dict) else None,
+                "error": message,
+                "error_type": (str(error.get("type") or "") or None) if error else None,
             }
             if self.subagent:
                 payload["subagent"] = self.subagent
@@ -647,6 +776,7 @@ class StepRecorder:
             summaries=list(self.summaries),
             evidence_quotes=list(self.evidence_quotes),
             error=self.last_error,
+            error_type=self.last_error_type if self.last_error else None,
             answer=answer,
         )
 
@@ -668,9 +798,18 @@ def to_langchain_tools(
             call_id = f"{tool.name}-{recorder.index}-{len(recorder.tools) + 1}"
             call = ToolCall(id=call_id, name=tool.name, arguments=kwargs)
             result, error, _confirmed_by = await execute_tool(call, ctx)
-            error_dict = error_payload(error) if error is not None else None
-            recorder.record(tool, result, error_dict)
-            return json.dumps(error_dict if error_dict is not None else result, ensure_ascii=False)
+            if error is not None:
+                logger.info(
+                    "инструмент %s шаг=%s: %s — %s",
+                    tool.name,
+                    recorder.step_id,
+                    error.type,
+                    error.message,
+                )
+                recorder.record(tool, result, error.model_dump())
+                return json.dumps(error_payload(error), ensure_ascii=False)
+            recorder.record(tool, result, None)
+            return json.dumps(result, ensure_ascii=False)
 
         return run
 
@@ -691,6 +830,7 @@ __all__ = [
     "TOOLS",
     "TOOL_BY_NAME",
     "build_run_context",
+    "tool_brief",
     "ensure_tools_registered",
     "to_langchain_tools",
 ]

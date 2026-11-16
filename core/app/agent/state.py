@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict
 
@@ -64,8 +65,18 @@ class Observation(BaseModel):
     evidence_quotes: list[str] = Field(
         default_factory=list, description="дословные цитаты из результатов инструментов"
     )
-    error: str | None = Field(default=None, description="последняя ошибка инструмента, если была")
+    error: str | None = Field(
+        default=None,
+        description="ошибка инструмента, которую шаг так и не обошёл (успешный повтор её снимает)",
+    )
+    error_type: str | None = Field(
+        default=None,
+        description="тип этой ошибки (ToolError.type); None — сбой шага целиком",
+    )
     answer: str | None = Field(default=None, description="финальный текст шага от модели")
+    action_done: bool = Field(
+        default=False, description="действие выполнено после подтверждения (узел confirm)"
+    )
 
 
 class AgentState(TypedDict):
@@ -209,16 +220,20 @@ def apply_replan(plan: list[PlanStep], updates: list[dict[str, Any]]) -> list[Pl
 
 
 def plan_diff(before: list[PlanStep], after: list[PlanStep]) -> dict[str, Any]:
-    """Короткая запись «было/стало» для экрана (A-4): id, статус, что поменялось."""
+    """Короткая запись «было/стало» для экрана (A-4): добавлен, убран, переименован.
+
+    Смена статуса правкой не считается: после пересборки все шаги снова `todo`, и строки
+    «s1: done → todo» только шумели на экране. Снятый шаг (`dropped`) — «убран».
+    """
     before_by_id = {s.id: s for s in before}
     changes: list[str] = []
     for step in after:
         old = before_by_id.get(step.id)
         if old is None:
             changes.append(f"+ {step.id}: {step.title}")
-        elif old.status != step.status:
-            changes.append(f"~ {step.id}: {old.status} → {step.status}")
-        elif old.title != step.title or old.done_criteria != step.done_criteria:
+        elif step.status == "dropped" and old.status != "dropped":
+            changes.append(f"- {step.id}: {step.title}")
+        elif old.title != step.title:
             changes.append(f"~ {step.id}: {old.title} → {step.title}")
     for step in before:
         if step.id not in {s.id for s in after}:
@@ -235,18 +250,42 @@ def plan_has_open_steps(plan: list[PlanStep]) -> bool:
     return any(step.status == "todo" for step in plan)
 
 
+_STEP_GIST_LIMIT = 200
+"""Сколько знаков итога шага идёт в список «что удалось»: полный ответ — у самого шага."""
+_STEP_PREFIX_RE = re.compile(
+    r"^\s*(?:#+\s*)?(?:шаг\s+\S+\s+(?:не\s+)?выполнен\w*(?:\s+частично)?\s*[:.—-]?\s*)",
+    re.IGNORECASE,
+)
+
+
+def step_gist(text: str, limit: int = _STEP_GIST_LIMIT) -> str:
+    """Первая мысль итога шага одной строкой: без «Шаг s3 выполнен:», разметки и хвоста.
+
+    До 16.11 в «что удалось» шёл полный ответ каждого шага — итог запуска растягивался на
+    экран и повторял сам себя (стенд, запуск 16).
+    """
+    first = next((line for line in text.strip().splitlines() if line.strip()), "")
+    first = _STEP_PREFIX_RE.sub("", first)
+    first = re.sub(r"[*_`#>]+", "", first)
+    first = " ".join(first.split()).strip(" -—:")
+    if len(first) <= limit:
+        return first
+    cut = first[: limit - 1].rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.;:—-") + "…"
+
+
 def done_steps_summary(plan: list[PlanStep], observations: list[Observation]) -> str:
-    """Человеческая сводка «что удалось» для честного частичного результата."""
+    """Человеческая сводка «что удалось»: шаг и первая мысль его итога."""
     lines: list[str] = []
     for step in plan:
         if step.status != "done":
             continue
         line = f"- {step.title}"
         obs = next((o for o in reversed(observations) if o.step_id == step.id), None)
-        if obs and obs.answer:
-            line += f": {obs.answer}"
-        elif step.result:
-            line += f": {step.result}"
+        source = obs.answer if obs and obs.answer else step.result
+        gist = step_gist(source) if source else ""
+        if gist:
+            line += f": {gist}"
         lines.append(line)
     return "\n".join(lines) if lines else "(шаги не закрыты)"
 

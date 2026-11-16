@@ -165,7 +165,7 @@ describe("ChatPage — главный экран «Агент» (U-5)", () => {
     expect(screen.getAllByText("2. Ошибка инструмента").length).toBeGreaterThan(0)
     const panel = screen.getByRole("complementary", { name: "Ход работы" })
     // Ошибка инструмента видна в панели без раскрытия ленты.
-    expect(panel.textContent).toMatch(/Ошибка: вакансия no-such-job не найдена/)
+    expect(panel.textContent).toMatch(/вакансия no-such-job не найдена/)
     expect(panel.textContent).toMatch(/Прочитать условия/)
     // Цель уже видна репликой — в карточке не дублируется.
     expect(screen.getAllByText(goal)).toHaveLength(2) // реплика + цель в шапке панели

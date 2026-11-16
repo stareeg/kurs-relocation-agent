@@ -111,6 +111,7 @@ def step_node(
         except Exception as exc:  # noqa: BLE001 — сбой шага это наблюдение с ошибкой, не падение графа
             recorder.summaries.append(f"шаг прерван: {exc}")
             recorder.last_error = recorder.last_error or str(exc)
+            recorder.last_error_type = None  # шаг прерван целиком: провал без модели
             answer = None
         else:
             answer = final_text_of(list(out["messages"]))

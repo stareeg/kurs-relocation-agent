@@ -9,6 +9,7 @@ LLM-порт подменены двойниками (`FakeDemoDb`, `FakeLlm`), 
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from typing import Any
 
@@ -212,6 +213,36 @@ async def test_work_terms_unknown_vacancy_is_not_found(db: FakeDemoDb) -> None:
     assert error is not None
     assert error.type == "not_found"
     assert "search_vacancies" in error.hint
+
+
+async def test_tool_error_text_reaches_event_and_observation(db: FakeDemoDb) -> None:
+    """Через обёртку deepagents: текст ошибки доходит до события, сводки и наблюдения.
+
+    До 16.11 в запись шла обёртка `{"error": {...}}`, и на экране стояло «ошибка
+    инструмента» без причины; модель при этом получала ошибку целиком.
+    """
+    from core.app.agent.events import AgentEvent
+    from core.app.agent.tools import StepRecorder, to_langchain_tools
+
+    events: list[AgentEvent] = []
+
+    class Sink:
+        def emit(self, event: AgentEvent) -> None:
+            events.append(event)
+
+    recorder = StepRecorder("s1", 1, emit=Sink())
+    tools = {t.name: t for t in to_langchain_tools(TOOLS, ctx_with(db), recorder)}
+
+    raw = await tools["read_work_terms"].ainvoke({"vacancy_id": "no-such-job"})
+
+    to_model = json.loads(raw)
+    assert to_model["error"]["type"] == "not_found"
+    payload = events[-1].payload
+    assert payload["ok"] is False
+    assert payload["error"] == "вакансии no-such-job нет в собранной базе"
+    assert payload["error_type"] == "not_found"
+    assert "вакансии no-such-job нет в собранной базе" in payload["summary"]
+    assert recorder.to_observation(None).error == "вакансии no-such-job нет в собранной базе"
 
 
 # ------------------------------------------------------------------- score_vacancy

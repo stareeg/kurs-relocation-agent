@@ -17,6 +17,7 @@ import {
   plural,
   runVacancies,
   summarize,
+  vacancyPrefix,
   type ToolStat,
   type VacancyRef,
 } from "./run-summary"
@@ -69,7 +70,7 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>
 }
 
-function ToolRow({ stat }: { stat: ToolStat }) {
+function ToolRow({ stat, vacancies }: { stat: ToolStat; vacancies?: Map<string, VacancyRef> }) {
   // Упавший инструмент раскрыт сразу: ошибка — то, ради чего панель открывают.
   const [open, setOpen] = useState(stat.errors > 0)
   const n = stat.calls.length
@@ -118,7 +119,8 @@ function ToolRow({ stat }: { stat: ToolStat }) {
                 title={call.ok ? call.text : undefined}
               >
                 {call.role ? <span className="font-medium">{call.role}: </span> : null}
-                {call.ok ? call.text || "ок" : `Ошибка: ${call.text}`}
+                {vacancyPrefix(call.vacancyId, vacancies)}
+                {call.ok ? call.text || "готово" : call.text}
               </span>
             </li>
           ))}
@@ -129,10 +131,12 @@ function ToolRow({ stat }: { stat: ToolStat }) {
 }
 
 function BudgetSection({ budget }: { budget: RunBudgetView }) {
+  // У запуска без записи расхода нули по вызовам и токенам были бы неправдой — только шаги.
+  const meters = budget.recorded ? budget.meters : budget.meters.filter((m) => m.key === "steps")
   return (
     <div className="space-y-3">
       <dl className="space-y-2.5">
-        {budget.meters.map((m) => {
+        {meters.map((m) => {
           const value = m.key === "tokens" ? formatTokens(m.used) : String(m.used)
           const limit = m.limit != null ? (m.key === "tokens" ? formatTokens(m.limit) : String(m.limit)) : null
           return (
@@ -154,13 +158,13 @@ function BudgetSection({ budget }: { budget: RunBudgetView }) {
               ) : null}
               {m.key === "tokens" && budget.recorded ? (
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  вход {formatTokens(budget.tokensIn)} · выход {formatTokens(budget.tokensOut)}
+                  прочитал {formatTokens(budget.tokensIn)} · написал {formatTokens(budget.tokensOut)}
                 </p>
               ) : null}
             </div>
           )
         })}
-        <div className="space-y-1">
+        <div className={cn("space-y-1", !budget.recorded && "hidden")}>
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <dt className="text-muted-foreground">Цена</dt>
             <dd className="tabular-nums text-foreground">{budget.recorded ? formatUsd(budget.cost) : "—"}</dd>
@@ -178,15 +182,17 @@ function BudgetSection({ budget }: { budget: RunBudgetView }) {
       </dl>
       {budget.recorded ? (
         <p className="text-xs text-muted-foreground tabular-nums">
-          Вызовы модели:{" "}
-          {budget.groups.map((g, i) => (
-            <Fragment key={g.key}>
-              {i > 0 ? " · " : null}
-              <span title={g.hint}>
-                {g.label} {g.calls}
-              </span>
-            </Fragment>
-          ))}
+          Кто вызывал модель:{" "}
+          {budget.groups
+            .filter((g) => g.key === "agent" || g.calls > 0)
+            .map((g, i) => (
+              <Fragment key={g.key}>
+                {i > 0 ? " · " : null}
+                <span title={g.hint}>
+                  {g.label} {g.calls}
+                </span>
+              </Fragment>
+            ))}
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -290,7 +296,7 @@ export function AgentWorkPanel({
               {view.run.goal}
             </p>
             {summary.understanding ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="line-clamp-2 text-xs text-muted-foreground" title={summary.understanding}>
                 <span className="font-medium">Как понял цель:</span> {summary.understanding}
               </p>
             ) : null}
@@ -317,6 +323,7 @@ export function AgentWorkPanel({
                 currentId={summary.currentStepId}
                 live={!terminal}
                 rowsByStep={summary.rowsByStep}
+                vacancies={vacancies}
               />
               <PlanChanges changes={view.planChanges} />
             </div>
@@ -375,7 +382,7 @@ export function AgentWorkPanel({
           {summary.tools.length > 0 ? (
             <ul className="space-y-0.5">
               {summary.tools.map((stat) => (
-                <ToolRow key={`${view?.run.id ?? 0}:${stat.key}`} stat={stat} />
+                <ToolRow key={`${view?.run.id ?? 0}:${stat.key}`} stat={stat} vacancies={vacancies} />
               ))}
             </ul>
           ) : (
@@ -399,7 +406,11 @@ export function AgentWorkPanel({
         </PanelSection>
 
         <PanelSection title="Журнал" count={summary.rows.length} defaultOpen={false}>
-          {summary.rows.length > 0 ? <RunLog rows={summary.rows} /> : <Empty>Событий нет.</Empty>}
+          {summary.rows.length > 0 ? (
+            <RunLog rows={summary.rows} vacancies={vacancies} />
+          ) : (
+            <Empty>Событий нет.</Empty>
+          )}
         </PanelSection>
       </div>
     </div>

@@ -82,7 +82,7 @@ describe("AgentWorkPanel", () => {
     expect(screen.getByText(/Откликнуться сразу \(снят\)/)).toBeTruthy()
     expect(screen.getByText(/вакансии нет в базе/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /Прочитать условия no-such-job/ }))
-    expect(screen.getByText("Ошибка инструмента · Условия найма")).toBeTruthy()
+    expect(screen.getByText("Ошибка · Условия найма")).toBeTruthy()
   })
 
   it("инструменты: число вызовов, упавший раскрыт с текстом ошибки", () => {
@@ -90,7 +90,7 @@ describe("AgentWorkPanel", () => {
     expect(screen.getByText("3 · 1 ошибка")).toBeTruthy()
     const terms = screen.getByRole("button", { name: /Условия найма/ })
     expect(terms.getAttribute("aria-expanded")).toBe("true")
-    expect(screen.getByText("Ошибка: вакансия no-such-job не найдена")).toBeTruthy()
+    expect(screen.getByText("вакансия no-such-job не найдена")).toBeTruthy()
     expect(screen.getByRole("button", { name: /Поиск вакансий/ }).getAttribute("aria-expanded")).toBe(
       "false",
     )
@@ -127,7 +127,7 @@ describe("AgentWorkPanel", () => {
     expect(screen.getByLabelText("Шаги: 2 из 8")).toBeTruthy()
     expect(screen.getByLabelText("Вызовы модели: 17 из 40")).toBeTruthy()
     expect(screen.getByLabelText(/^Токены: 52\s300 из 200\s000$/)).toBeTruthy()
-    expect(screen.getByText(/вход 48\s100 · выход 4\s200/)).toBeTruthy()
+    expect(screen.getByText(/прочитал 48\s100 · написал 4\s200/)).toBeTruthy()
     expect(screen.getAllByText("$0.0042").length).toBeGreaterThan(0)
     expect(screen.getByText(/Из неё \$0\.0024 условно: GLM работает на нашей ВМ/)).toBeTruthy()
     expect(screen.getByText(/Оплачено в OpenRouter: \$0\.0018/)).toBeTruthy()

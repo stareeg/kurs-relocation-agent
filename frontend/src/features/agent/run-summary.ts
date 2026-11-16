@@ -65,6 +65,70 @@ export const PLAN_CHANGE_LABEL: Record<string, string> = {
   rebuild: "План пересобран",
   continue: "План скорректирован",
   finish: "План завершён",
+  rework: "Судья вернул итог на доработку",
+}
+
+export type PlanChangeLine = { kind: "add" | "drop" | "edit"; text: string }
+
+const DIFF_LINE_RE = /^([+~-])\s*[^:\s]+:\s*(.*)$/
+const STATUS_ONLY_RE = /^(todo|done|dropped)\s*→\s*(todo|done|dropped)$/
+
+/**
+ * Строки «было/стало» человеческим языком: «+ s3: …» — добавлен шаг, «- s1: …» — убран,
+ * «~ s2: a → b» — изменён. Служебная смена статуса («done → todo» после пересборки, так
+ * писали события до 16.11) правкой плана не считается и не показывается.
+ */
+export function planChangeLines(changes: string[]): PlanChangeLine[] {
+  const out: PlanChangeLine[] = []
+  for (const line of changes) {
+    const m = line.match(DIFF_LINE_RE)
+    if (!m) continue
+    const [, sign, rest] = m
+    if (sign === "~" && STATUS_ONLY_RE.test(rest.trim())) continue
+    out.push({ kind: sign === "+" ? "add" : sign === "-" ? "drop" : "edit", text: rest.trim() })
+  }
+  return out
+}
+
+const RECOMMENDATION_TEXT: Record<string, string> = {
+  strong_apply: "откликаться",
+  apply: "можно откликаться",
+  maybe: "под вопросом",
+  skip: "не подходит",
+}
+
+/**
+ * Что вернул инструмент — одной строкой. Новые события несут готовую строку `brief`
+ * (бэкенд считает её по полному результату); у запусков до 16.11 есть только
+ * сводка-JSON, обрезанная на 400 знаках, — из неё достаём главное.
+ */
+export function toolText(p: Record<string, unknown>): string {
+  if (typeof p.brief === "string" && p.brief) return p.brief
+  const tool = String(p.tool ?? "")
+  const summary = cleanSummary(String(p.summary ?? ""))
+  if (!summary.startsWith("{")) return summary
+  switch (tool) {
+    case "search_vacancies": {
+      const total = summary.match(/"total":\s*(\d+)/)?.[1]
+      const titles = [...summary.matchAll(/"title":\s*"([^"]+)"/g)].map((m) => m[1]).slice(0, 3)
+      if (total === "0" || (!total && titles.length === 0)) return "ничего не найдено"
+      return `найдено${total ? ` ${total}` : ""}: ${titles.join(", ")}`
+    }
+    case "read_profile":
+      return "профиль прочитан"
+    case "score_vacancy": {
+      const score = summary.match(/"overall_score":\s*(\d+)/)?.[1]
+      const rec = summary.match(/"recommendation":\s*"([a-z_]+)"/)?.[1]
+      if (!score) return "оценка готова"
+      return `${score} из 100${rec && RECOMMENDATION_TEXT[rec] ? `, ${RECOMMENDATION_TEXT[rec]}` : ""}`
+    }
+    case "read_work_terms":
+      return "условия прочитаны"
+    case "write_cover_letter":
+      return "письмо готово"
+    default:
+      return "готово"
+  }
 }
 
 export function toolLabel(tool: string): string {
@@ -108,6 +172,16 @@ export type VacancyRef = {
   text?: string | null
 }
 
+/** Подпись вакансии в строке вызова: название вместо id, если вакансия известна экрану. */
+export function vacancyPrefix(
+  vacancyId: string | null | undefined,
+  vacancies?: Map<string, VacancyRef>,
+): string {
+  if (!vacancyId) return ""
+  const ref = vacancies?.get(vacancyId)
+  return ref ? `${ref.title}: ` : `${vacancyId}: `
+}
+
 export function vacancyName(v: VacancyRef): string {
   return v.company ? `${v.title} · ${v.company}` : v.title
 }
@@ -120,6 +194,15 @@ export type LogRow = {
   title: string
   detail?: string
   stepId?: string | null
+  /** Шаг, к которому относится строка: `id|название` (id переиспользуются после пересборки). */
+  stepKey?: string | null
+  /** id вакансии, о которой строка (имя подставляет панель). */
+  vacancyId?: string | null
+}
+
+/** Ключ шага плана для привязки вызовов: после пересборки «s3» может быть другим шагом. */
+export function stepKey(id: string, title: string): string {
+  return `${id}|${title}`
 }
 
 function toolTitle(tool: string, role: string | null): string {
@@ -147,32 +230,33 @@ function toLogRow(ev: AgentEvent): LogRow | null {
     case "tool_called": {
       const role = typeof p.subagent === "string" ? p.subagent : null
       const title = toolTitle(String(p.tool ?? ""), role)
+      const vacancyId =
+        typeof p.vacancy_id === "string"
+          ? p.vacancy_id
+          : (String(p.summary ?? "").match(VACANCY_ID_RE)?.[1] ?? null)
       if (p.ok === false) {
-        return { id: ev.id, kind: "tool-error", title: `Ошибка инструмента · ${title}`, detail: toolError(p) }
+        return { id: ev.id, kind: "tool-error", title: `Ошибка · ${title}`, detail: toolError(p), vacancyId }
       }
-      return { id: ev.id, kind: "tool", title, detail: cleanSummary(String(p.summary ?? "")) }
+      return { id: ev.id, kind: "tool", title, detail: toolText(p), vacancyId }
     }
     case "plan_changed": {
       const action = String(p.action ?? "")
       if (action === "rebuild") return { id: ev.id, kind: "plan", title: "План пересобран", detail: reason }
-      if (action === "finish") return { id: ev.id, kind: "plan", title: "Итог принят", detail: reason }
-      return {
-        id: ev.id,
-        kind: "plan",
-        title: extractChanges(p.diff).length > 0 ? "План скорректирован" : "План сверен",
-        detail: reason,
-      }
+      if (action === "finish") return { id: ev.id, kind: "plan", title: "Шаги закончены, итог — судье" }
+      if (action === "rework") return { id: ev.id, kind: "judge-fail", title: "Судья вернул итог на доработку", detail: reason }
+      // «Продолжать как есть» после каждого шага — ход, а не событие: в журнале не нужен.
+      if (planChangeLines(extractChanges(p.diff)).length === 0) return null
+      return { id: ev.id, kind: "plan", title: "План скорректирован", detail: reason }
     }
     case "step_checked":
-      return p.done === true
-        ? { id: ev.id, kind: "check", title: "Шаг закрыт" }
-        : { id: ev.id, kind: "tool-error", title: "Шаг не закрыт", detail: reason }
+      // «Шаг закрыт» повторяет галочку шага и вердикт проверки — в журнале только провал.
+      return p.done === true ? null : { id: ev.id, kind: "tool-error", title: "Шаг не закрыт", detail: reason }
     case "judge_verdict": {
       const verdict = String(p.verdict ?? "")
-      const who = p.level === "step" ? "Самопроверка шага" : "Судья итога"
+      const who = p.level === "step" ? "Проверка шага" : "Судья итога"
       if (verdict === "pass") return { id: ev.id, kind: "judge-ok", title: who, detail: "пройдена" }
       if (verdict === "fail") return { id: ev.id, kind: "judge-fail", title: who, detail: reason ?? "не пройдена" }
-      return { id: ev.id, kind: "info", title: who, detail: "не проверяется" }
+      return { id: ev.id, kind: "info", title: who, detail: reason ?? "не проверяется" }
     }
     case "needs_confirmation":
       return { id: ev.id, kind: "info", title: "Действие ждёт подтверждения человека" }
@@ -203,7 +287,13 @@ function toLogRow(ev: AgentEvent): LogRow | null {
 
 // ---------------------------------------------------------------- инструменты
 
-export type ToolCallRow = { id: number; ok: boolean; text: string; role: string | null }
+export type ToolCallRow = {
+  id: number
+  ok: boolean
+  text: string
+  role: string | null
+  vacancyId?: string | null
+}
 
 export type ToolStat = { key: string; label: string; calls: ToolCallRow[]; errors: number }
 
@@ -309,6 +399,7 @@ export function summarize(events: AgentEvent[]): RunSummary {
   let stepsTaken = 0
   let toolErrors = 0
   let currentStepId: string | null = null
+  let currentKey: string | null = null
   let finalVerdict: RunSummary["finalVerdict"] = null
 
   for (const ev of events) {
@@ -320,16 +411,18 @@ export function summarize(events: AgentEvent[]): RunSummary {
     if (ev.type === "step_started") {
       stepsTaken += 1
       currentStepId = String(p.step_id ?? "")
+      currentKey = stepKey(currentStepId, String(p.title ?? ""))
     }
     const row = toLogRow(ev)
     if (row) {
       const own = typeof p.step_id === "string" ? p.step_id : null
       row.stepId = own ?? currentStepId
+      row.stepKey = !own || own === currentStepId ? currentKey : stepKey(own, "")
       rows.push(row)
-      if (row.kind !== "step" && row.stepId) {
-        const list = rowsByStep.get(row.stepId) ?? []
+      if (row.kind !== "step" && row.stepKey) {
+        const list = rowsByStep.get(row.stepKey) ?? []
         list.push(row)
-        rowsByStep.set(row.stepId, list)
+        rowsByStep.set(row.stepKey, list)
       }
     }
     if (ev.type === "tool_called" || ev.type === "observation") mentionParts.push(JSON.stringify(p))
@@ -349,8 +442,12 @@ export function summarize(events: AgentEvent[]): RunSummary {
       stat.calls.push({
         id: ev.id,
         ok,
-        text: ok ? cleanSummary(String(p.summary ?? "")) : toolError(p),
+        text: ok ? toolText(p) : toolError(p),
         role: role && tool !== "task" ? roleLabel(role) : null,
+        vacancyId:
+          typeof p.vacancy_id === "string"
+            ? p.vacancy_id
+            : (String(p.summary ?? "").match(VACANCY_ID_RE)?.[1] ?? null),
       })
       if (!ok) stat.errors += 1
       tools.set(key, stat)
