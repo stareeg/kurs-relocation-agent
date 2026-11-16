@@ -50,13 +50,20 @@ function renderChat(initialEntry = "/chat") {
 }
 
 describe("ChatPage — главный экран «Агент»", () => {
-  it("пустой экран — приветствие, композер и список серверных диалогов", async () => {
+  it("пустой экран — приветствие, примеры целей, композер и список серверных диалогов", async () => {
     renderChat()
-    expect(screen.getByRole("heading", { name: "Агент" })).toBeTruthy()
-    expect(screen.getByPlaceholderText("Спросите агента…")).toBeTruthy()
-    // A-3: список диалогов теперь серверный, тумблер «Агент» рядом с композером.
+    expect(screen.getByRole("heading", { name: "Агент по валютной удалёнке" })).toBeTruthy()
+    // Режим «Агент» включён по умолчанию; переключатель «Агент / Чат» рядом с композером.
+    expect(screen.getByPlaceholderText("Опишите задачу для агента")).toBeTruthy()
     expect(await screen.findByText("Диалоги")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Агент" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Чат" })).toBeTruthy()
+    // Примеры целей: клик подставляет цель в композер.
+    const example = screen.getByRole("button", { name: /no-such-job/ })
+    example.click()
+    expect(
+      (await screen.findByDisplayValue(/no-such-job/)) as HTMLTextAreaElement,
+    ).toBeTruthy()
     // Переписка с HR переехала в «Вакансии»: кнопок списков и «контекстов» здесь больше нет.
     expect(screen.queryByText("Архив")).toBeNull()
     expect(screen.queryByText("Контексты")).toBeNull()
@@ -78,7 +85,6 @@ describe("ChatPage — главный экран «Агент»", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         const method = (init?.method ?? "GET").toUpperCase()
-        console.log("FETCH", method, url)
         const json = (data: unknown) =>
           new Response(JSON.stringify(data), {
             status: 200,

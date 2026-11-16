@@ -197,7 +197,13 @@ export function useAgentRuns(sessionId: number | null) {
             }
           }),
         )
-        if (!cancelled) setRuns(views.sort((a, b) => a.createdAtMs - b.createdAtMs))
+        if (cancelled) return
+        // Запуск, стартовавший, пока список грузился, не теряем: сливаем по id.
+        setRuns((cur) => {
+          const ids = new Set(views.map((v) => v.run.id))
+          const extra = cur.filter((r) => !ids.has(r.run.id) && r.run.session_id === sessionId)
+          return [...views, ...extra].sort((a, b) => a.createdAtMs - b.createdAtMs)
+        })
       } catch {
         if (!cancelled) setRuns([])
       }
@@ -254,9 +260,10 @@ export function useAgentRuns(sessionId: number | null) {
     return () => controller.abort()
   }, [runs])
 
-  const start = useCallback(async (goal: string): Promise<boolean> => {
+  const start = useCallback(async (goal: string, explicitSessionId?: number | null): Promise<boolean> => {
     try {
-      const run = await startAgentRun(goal, sessionId)
+      // Первый запуск в новом диалоге: сессия только что создана, sessionId хука ещё старый.
+      const run = await startAgentRun(goal, explicitSessionId ?? sessionId)
       const view = foldAll(run, [])
       setRuns((cur) => [...cur, view])
       return true

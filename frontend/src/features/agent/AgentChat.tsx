@@ -1,28 +1,22 @@
 /**
- * Агент — главный экран (шаг U-0/U-1, каркас визуала как в COWORK): один свободный чат
- * без привязки к вакансии, чтобы можно было написать агенту что угодно и минимально
- * проверить его работу. Пустой экран — приветствие и большое поле ввода; с историей —
- * лента + композер снизу. Переписка с HR переехала в правую панель раздела «Вакансии»
- * (вкладка «Чат» в дровере), «контексты» убраны.
+ * Агент — главный экран: диалоги слева (сервер, A-3), лента и композер справа.
  *
- * A-3: диалоги живут на сервере (список слева), у композера есть режим «Агент» —
- * сообщение уходит фоновым запуском (граф с планом/шагами/подтверждением), ход работы
- * виден в блоке запуска; карточку подтверждения можно принять после рестарта API.
+ * Два режима композера: «Агент» (по умолчанию) — сообщение уходит фоновым запуском графа
+ * с планом, инструментами и подтверждением действий, ход работы виден в блоке запуска;
+ * «Чат» — обычный стрим ответа модели с выбором тира и вложениями. Переписка с HR живёт
+ * в дровере вакансии.
+ *
+ * Лента держится внизу, пока пользователь сам не отмотал вверх: ResizeObserver на
+ * содержимом ловит и новые сообщения, и токены стрима, и события запуска.
  */
-import { useEffect, useMemo, useRef, useState } from "react"
-import { Bot, Copy, Loader2, Paperclip, Send, Sparkles, Trash2 } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { ArrowDown, Copy, Loader2, Paperclip, Send } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { linkify } from "@/components/chat/linkify"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import {
   Select,
   SelectContent,
@@ -56,12 +50,29 @@ import { AgentChatSessions } from "./AgentChatSessions"
 import { appendAgentChatMessage, createAgentChat } from "@/api/agent"
 
 const TIER_STORAGE_KEY = "copilot.agent-chat.tier"
+const MODE_STORAGE_KEY = "copilot.agent-chat.mode"
 const MIGRATED_KEY = "copilot.agent-chat.migrated-v2"
+
+type ComposerMode = "agent" | "chat"
+
+const MODE_OPTIONS = [
+  { value: "agent", label: "Агент", title: "План, инструменты продукта, подтверждение действий" },
+  { value: "chat", label: "Чат", title: "Обычный ответ модели без инструментов" },
+] as const
 
 const TIER_OPTIONS: { value: AgentChatTier; label: string }[] = [
   { value: "", label: "Авто" },
   { value: "advanced", label: "Умная" },
   { value: "basic", label: "Быстрая" },
+]
+
+// Цели для быстрого старта: обычный сценарий, сценарий с ошибкой инструмента
+// (вакансии с таким id нет — агент должен заметить ошибку и найти замену) и действие
+// с подтверждением человеком.
+const EXAMPLE_GOALS = [
+  "Найди удалённые вакансии backend с оплатой в валюте и оцени самую подходящую",
+  "Проверь условия найма вакансии no-such-job; если её нет в базе, найди похожую и оцени",
+  "Подбери лучшую вакансию под мой профиль, напиши короткое сопроводительное письмо и поставь отклик",
 ]
 
 function loadTier(): AgentChatTier {
@@ -73,75 +84,91 @@ function loadTier(): AgentChatTier {
   }
 }
 
+function loadMode(): ComposerMode {
+  try {
+    return localStorage.getItem(MODE_STORAGE_KEY) === "chat" ? "chat" : "agent"
+  } catch {
+    return "agent"
+  }
+}
+
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
+  }
+}
+
 function fmtTime(ms: number): string {
   const d = new Date(ms)
   const p = (n: number) => String(n).padStart(2, "0")
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+  const today = new Date()
+  const sameDay =
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`
+  return sameDay ? hm : `${p(d.getDate())}.${p(d.getMonth() + 1)} ${hm}`
 }
 
-function Bubble({
-  mine,
+function copyText(text: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast.success("Скопировано"),
+    () => toast.error("Не удалось скопировать"),
+  )
+}
+
+function UserMessage({
+  body,
+  time,
+  attachments = [],
+}: {
+  body: string
+  time?: string
+  attachments?: AttachmentOut[]
+}) {
+  return (
+    <div className="flex flex-col items-end">
+      <div className="max-w-[75%] rounded-2xl rounded-br-md bg-slate-100 px-4 py-2.5">
+        {attachments.length > 0 ? <AttachmentGrid attachments={attachments} className="mb-1" /> : null}
+        {body ? (
+          <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-foreground">
+            {linkify(body)}
+          </p>
+        ) : null}
+      </div>
+      {time ? <span className="mt-1 text-xs text-muted-foreground tabular-nums">{time}</span> : null}
+    </div>
+  )
+}
+
+function AssistantMessage({
   body,
   time,
   error,
-  attachments = [],
-  onCopy,
 }: {
-  mine: boolean
   body: string
   time?: string
   error?: boolean
-  attachments?: AttachmentOut[]
-  onCopy?: () => void
 }) {
-  const row = (
-    <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
-      <div className="flex max-w-[85%] flex-col">
-        {!mine && (
-          <div className="mb-1 flex items-center gap-1 text-xs text-slate-400">Агент</div>
-        )}
-        <div
-          className={cn(
-            "rounded-2xl px-3.5 py-2 text-sm leading-snug",
-            mine ? "rounded-br-sm bg-sky-100 text-slate-900" : "rounded-bl-sm bg-violet-100",
-            error && "bg-rose-50",
-          )}
+  return (
+    <div className="group">
+      <div className={cn(error && "rounded-lg bg-status-bad-soft px-3 py-2 text-status-bad-fg")}>
+        <MarkdownView markdown={body} chat />
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+        {time ? <span className="tabular-nums">{time}</span> : null}
+        <button
+          type="button"
+          className="flex items-center gap-1 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          onClick={() => copyText(body)}
         >
-          {attachments.length > 0 ? <AttachmentGrid attachments={attachments} className="mb-1" /> : null}
-          {body ? (
-            mine ? (
-              <p className="whitespace-pre-wrap break-words text-base leading-snug">
-                {linkify(body)}
-              </p>
-            ) : (
-              <MarkdownView markdown={body} chat />
-            )
-          ) : null}
-          <div className="mt-0.5 flex items-center justify-end gap-2 text-xs">
-            {time && <span className="font-semibold tabular-nums text-slate-400">{time}</span>}
-          </div>
-        </div>
+          <Copy className="size-3.5" strokeWidth={2} />
+          Копировать
+        </button>
       </div>
     </div>
-  )
-  if (!onCopy) return row
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={onCopy}>
-          <Copy />
-          Копировать
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  )
-}
-
-function copyText(text: string, toastOne: boolean) {
-  navigator.clipboard.writeText(text).then(
-    () => toast.success(toastOne ? "Сообщение скопировано" : "Сообщения скопированы"),
-    () => toast.error("Не удалось скопировать"),
   )
 }
 
@@ -151,18 +178,25 @@ type ThreadItem =
 
 export function AgentChat() {
   const sessions = useAgentSessions()
-  const conv = useAgentConversation(sessions.activeId, async () => {
-    if (sessions.activeId != null) return sessions.activeId
-    const created = await sessions.create()
-    return created?.id ?? null
-  })
+  const refreshSessions = sessions.refresh
+  const onUserPersisted = useCallback(() => void refreshSessions(), [refreshSessions])
+  const conv = useAgentConversation(
+    sessions.activeId,
+    async () => {
+      if (sessions.activeId != null) return sessions.activeId
+      const created = await sessions.create()
+      return created?.id ?? null
+    },
+    onUserPersisted,
+  )
   const runs = useAgentRuns(sessions.activeId)
   const [text, setText] = useState("")
   const [tier, setTier] = useState<AgentChatTier>(loadTier)
-  const [agentMode, setAgentMode] = useState(false)
-  const [confirmClear, setConfirmClear] = useState(false)
+  const [mode, setMode] = useState<ComposerMode>(loadMode)
+  const agentMode = mode === "agent"
   const attachments = useAttachmentUpload()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
   const [cropTarget, setCropTarget] = useState<{ key: string; attachment: AttachmentOut } | null>(
     null,
   )
@@ -175,7 +209,6 @@ export function AgentChat() {
   // Разовый перенос старого localStorage-диалога в серверную сессию (A-3): один раз,
   // только если серверных сессий ещё нет и локальная история непуста.
   useEffect(() => {
-    console.log("MIGRATION EFFECT", sessions.loading, sessions.sessions.length)
     if (sessions.loading || sessions.sessions.length > 0) return
     let migrated: boolean
     try {
@@ -183,7 +216,6 @@ export function AgentChat() {
     } catch {
       migrated = false
     }
-    console.log("MIGRATION FLAG", migrated, localStorage.getItem("copilot.agent-chat.messages"))
     if (migrated) return
     let legacy: AgentChatMessage[]
     try {
@@ -192,11 +224,7 @@ export function AgentChat() {
     } catch {
       legacy = []
     }
-    try {
-      localStorage.setItem(MIGRATED_KEY, "1")
-    } catch {
-      /* ignore */
-    }
+    store(MIGRATED_KEY, "1")
     if (legacy.length === 0) return
     void (async () => {
       try {
@@ -223,16 +251,49 @@ export function AgentChat() {
     return items.sort((a, b) => a.at - b.at)
   }, [conv.messages, runs.runs])
 
+  // Цель запуска уже видна репликой пользователя — в блоке запуска её не дублируем.
+  const userTexts = useMemo(
+    () => new Set(conv.messages.filter((m) => m.role === "user").map((m) => m.content.trim())),
+    [conv.messages],
+  )
+
+  // ---------------------------------------------------------------- автоскролл
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const prevLen = useRef(0)
-  useEffect(() => {
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const pinned = useRef(true)
+  const [showDown, setShowDown] = useState(false)
+
+  const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
     if (!el) return
-    const total = thread.length + (conv.pending ? 1 : 0)
-    const grew = total > prevLen.current
-    prevLen.current = total
-    if (grew) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [thread, conv.pending])
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" })
+  }, [])
+
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content) return
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) scrollToBottom()
+    })
+    ro.observe(content)
+    return () => ro.disconnect()
+  }, [scrollToBottom])
+
+  // Смена диалога — снова прилипаем к низу.
+  useEffect(() => {
+    pinned.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- сброс UI-флага при смене внешнего источника (диалог)
+    setShowDown(false)
+    scrollToBottom()
+  }, [sessions.activeId, scrollToBottom])
+
+  function onScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    pinned.current = atBottom
+    setShowDown(!atBottom)
+  }
 
   const readyAttachments = useMemo(
     () =>
@@ -242,13 +303,18 @@ export function AgentChat() {
     [attachments.items],
   )
 
+  const agentBusy = agentMode && runs.hasActive
+  const busy = conv.isRunning || agentBusy
+  const canSend =
+    !busy && (text.trim().length > 0 || (!agentMode && attachments.attachmentIds.length > 0))
+
   function send() {
     const t = text.trim()
-    if ((!t.trim() && attachments.attachmentIds.length === 0) || conv.isRunning) return
+    if (!canSend) return
     setText("")
+    pinned.current = true
     if (agentMode) {
       void sendAgentRun(t)
-      attachments.clear()
       return
     }
     conv.askLlm(t, readyAttachments, tier)
@@ -263,116 +329,143 @@ export function AgentChat() {
       return
     }
     await conv.persistUser(goal, sid)
-    const ok = await runs.start(goal)
+    const ok = await runs.start(goal, sid)
     if (!ok) toast.error("Запуск не стартовал — проверьте доступ к серверу")
   }
 
-  function copyMessage(m: AgentChatMessage) {
-    copyText(`${m.role === "user" ? "Я" : "Агент"}: ${m.content}`, true)
-  }
-
-  async function handleClear() {
-    const ok = await conv.clear()
-    setConfirmClear(false)
-    if (ok) {
-      await sessions.refresh()
-      sessions.setActiveId(null)
-    }
+  function pickExample(goal: string) {
+    setMode("agent")
+    store(MODE_STORAGE_KEY, "agent")
+    setText(goal)
+    requestAnimationFrame(() => composerRef.current?.querySelector("textarea")?.focus())
   }
 
   return (
-    <div className="flex min-h-0 flex-1 bg-slate-50">
+    <div className="flex min-h-0 flex-1 bg-background">
       <AgentChatSessions
         sessions={sessions}
         activeId={sessions.activeId}
         onSelect={(id) => sessions.setActiveId(id)}
-        onCreate={() => void sessions.create()}
+        onCreate={() => sessions.setActiveId(null)}
         onDelete={(id) => void sessions.remove(id)}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {hasMessages ? (
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl space-y-1.5 px-4 py-4">
-              {thread.map((item) =>
-                item.kind === "message" ? (
-                  <Bubble
-                    key={item.message.id}
-                    mine={item.message.role === "user"}
-                    body={item.message.content}
-                    time={fmtTime(item.message.createdAt)}
-                    error={item.message.error}
-                    attachments={item.message.attachments}
-                    onCopy={() => copyMessage(item.message)}
-                  />
-                ) : (
-                  <AgentRunView
-                    key={`run-${item.view.run.id}`}
-                    view={item.view}
-                    onApprove={(runId, approved) => {
-                      void runs.approve(runId, approved).catch(() =>
-                        toast.error("Не удалось передать решение"),
-                      )
-                    }}
-                  />
-                ),
-              )}
-              {conv.pending ? (
-                <>
-                  <Bubble
-                    mine
-                    body={conv.pending.question}
-                    time={fmtTime(conv.pending.askedAt)}
-                    attachments={conv.pending.attachments}
-                  />
-                  {conv.pending.answer ? (
-                    <Bubble mine={false} body={conv.pending.answer} error={conv.pending.error} />
-                  ) : conv.isRunning ? (
-                    <div className="flex justify-start">
-                      <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-violet-100 px-3 py-2 text-xs text-slate-500">
-                        <Loader2 className="size-3.5 animate-spin" strokeWidth={2} />
-                        Думаю…
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={contentRef} className="mx-auto w-full max-w-5xl px-6 py-6">
+            {hasMessages ? (
+              <div className="space-y-6">
+                {thread.map((item) =>
+                  item.kind === "message" ? (
+                    item.message.role === "user" ? (
+                      <UserMessage
+                        key={item.message.id}
+                        body={item.message.content}
+                        time={fmtTime(item.message.createdAt)}
+                        attachments={item.message.attachments}
+                      />
+                    ) : (
+                      <AssistantMessage
+                        key={item.message.id}
+                        body={item.message.content}
+                        time={fmtTime(item.message.createdAt)}
+                        error={item.message.error}
+                      />
+                    )
+                  ) : (
+                    <AgentRunView
+                      key={`run-${item.view.run.id}`}
+                      view={item.view}
+                      showGoal={!userTexts.has(item.view.run.goal.trim())}
+                      onApprove={(runId, approved) => {
+                        pinned.current = true
+                        void runs.approve(runId, approved).catch(() =>
+                          toast.error("Не удалось передать решение"),
+                        )
+                      }}
+                    />
+                  ),
+                )}
+                {conv.pending ? (
+                  <>
+                    <UserMessage
+                      body={conv.pending.question}
+                      time={fmtTime(conv.pending.askedAt)}
+                      attachments={conv.pending.attachments}
+                    />
+                    {conv.pending.answer ? (
+                      <AssistantMessage body={conv.pending.answer} error={conv.pending.error} />
+                    ) : conv.isRunning ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                        Отвечаю…
                       </div>
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1" />
-        )}
-
-        <div
-          className={cn(
-            "shrink-0 border-t bg-white",
-            !hasMessages && "border-t-0 bg-transparent",
-          )}
-        >
-          <div className="mx-auto w-full max-w-3xl p-4">
-            {hasMessages ? null : (
-              <div className="mb-3 flex flex-col items-center gap-1 text-center">
-                <Sparkles className="size-6 text-violet-500" strokeWidth={2} />
-                <h1 className="text-lg font-semibold text-slate-900">Агент</h1>
-                <p className="text-sm text-slate-500">
-                  Напишите что угодно: найти вакансию, проверить условия въезда, разобрать оффер.
-                  Включите режим «Агент», чтобы задача пошла планом с подтверждениями.
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            ) : (
+              <div className="mx-auto flex min-h-[50vh] max-w-2xl flex-col justify-center py-10">
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                  Агент по валютной удалёнке
+                </h1>
+                <p className="mt-2 text-base leading-relaxed text-muted-foreground">
+                  Составляет план и выполняет его инструментами продукта: профиль, база вакансий,
+                  условия найма, оценка, сопроводительное письмо. Отклик ставит в очередь только
+                  после вашего подтверждения.
                 </p>
+                <div className="mt-6 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Попробуйте
+                </div>
+                <div className="mt-2 space-y-2">
+                  {EXAMPLE_GOALS.map((goal) => (
+                    <button
+                      key={goal}
+                      type="button"
+                      className="block w-full rounded-lg border border-border bg-card px-4 py-3 text-left text-sm text-foreground transition-colors hover:border-slate-300 hover:bg-slate-50"
+                      onClick={() => pickExample(goal)}
+                    >
+                      {goal}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {showDown ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="absolute bottom-36 left-1/2 -translate-x-1/2 gap-1.5 rounded-full bg-card shadow-md"
+            onClick={() => {
+              pinned.current = true
+              setShowDown(false)
+              scrollToBottom(true)
+            }}
+          >
+            <ArrowDown className="size-4" strokeWidth={2} />
+            Вниз
+          </Button>
+        ) : null}
+
+        <div className="shrink-0 bg-background">
+          <div className="mx-auto w-full max-w-5xl px-6 pb-5 pt-2">
             <div
+              ref={composerRef}
               className={cn(
-                "space-y-2 rounded-2xl border bg-white p-3 shadow-sm transition-colors",
+                "space-y-2 rounded-2xl border border-border bg-card p-3 shadow-sm transition-colors focus-within:border-slate-300",
                 paste.isDraggingOver &&
                   "bg-sky-50 outline-dashed outline-2 -outline-offset-2 outline-sky-300",
               )}
-              onPaste={paste.onPaste}
-              onDragEnter={paste.onDragEnter}
-              onDragOver={paste.onDragOver}
-              onDragLeave={paste.onDragLeave}
-              onDrop={paste.onDrop}
+              onPaste={agentMode ? undefined : paste.onPaste}
+              onDragEnter={agentMode ? undefined : paste.onDragEnter}
+              onDragOver={agentMode ? undefined : paste.onDragOver}
+              onDragLeave={agentMode ? undefined : paste.onDragLeave}
+              onDrop={agentMode ? undefined : paste.onDrop}
             >
-              {attachments.items.length > 0 ? (
+              {!agentMode && attachments.items.length > 0 ? (
                 <AttachmentChips
                   items={attachments.items}
                   onRemove={attachments.remove}
@@ -386,106 +479,101 @@ export function AgentChat() {
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Спросите агента…"
-                className="max-h-40 bg-transparent"
+                placeholder={
+                  agentBusy
+                    ? "Агент работает — дождитесь итога или подтвердите действие"
+                    : agentMode
+                      ? "Опишите задачу для агента"
+                      : "Спросите модель"
+                }
+                className="max-h-48 min-h-12 resize-none border-0 bg-transparent p-1 text-base shadow-none focus-visible:ring-0 md:text-base"
                 autoFocus
-                disabled={conv.isRunning}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     send()
                   }
                 }}
               />
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept={Array.from(ACCEPTED_ATTACHMENT_MIME).join(",")}
-                    className="hidden"
-                    onChange={(e) => {
-                      attachments.addFiles(Array.from(e.target.files ?? []))
-                      e.target.value = ""
+                <div className="flex items-center gap-2">
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="Режим"
+                    options={MODE_OPTIONS}
+                    value={mode}
+                    onChange={(next) => {
+                      setMode(next)
+                      store(MODE_STORAGE_KEY, next)
                     }}
                   />
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    type="button"
-                    aria-label="Приложить файл"
-                    disabled={conv.isRunning || agentMode}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Paperclip className="size-4" strokeWidth={2} />
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={agentMode ? "default" : "outline"}
-                    className={cn("h-8 gap-1.5 px-2.5 text-xs", !agentMode && "text-slate-500")}
-                    aria-pressed={agentMode}
-                    title="Отправлять сообщение фоновым запуском агента: план, шаги, подтверждение действий"
-                    onClick={() => setAgentMode((v) => !v)}
-                  >
-                    <Bot className="size-4" strokeWidth={2} />
-                    Агент
-                  </Button>
-                  <Select
-                    value={tier}
-                    onValueChange={(v) => {
-                      const next = v as AgentChatTier
-                      setTier(next)
-                      try {
-                        localStorage.setItem(TIER_STORAGE_KEY, next)
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-8 w-[120px] bg-transparent" aria-label="Модель">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TIER_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {hasMessages ? (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      type="button"
-                      aria-label="Очистить диалог"
-                      className="text-slate-400 hover:text-rose-600"
-                      onClick={() => setConfirmClear(true)}
-                    >
-                      <Trash2 className="size-4" strokeWidth={2} />
-                    </Button>
+                  {!agentMode ? (
+                    <>
+                      <Select
+                        value={tier}
+                        onValueChange={(v) => {
+                          const next = v as AgentChatTier
+                          setTier(next)
+                          store(TIER_STORAGE_KEY, next)
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[110px] bg-transparent" aria-label="Модель">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TIER_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept={Array.from(ACCEPTED_ATTACHMENT_MIME).join(",")}
+                        className="hidden"
+                        onChange={(e) => {
+                          attachments.addFiles(Array.from(e.target.files ?? []))
+                          e.target.value = ""
+                        }}
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        type="button"
+                        className="size-8 text-muted-foreground"
+                        aria-label="Приложить файл"
+                        disabled={conv.isRunning}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Paperclip className="size-4" strokeWidth={2} />
+                      </Button>
+                    </>
                   ) : null}
                 </div>
-                <Button
-                  size="icon"
-                  type="button"
-                  aria-label="Отправить"
-                  disabled={conv.isRunning || (!text.trim() && attachments.attachmentIds.length === 0)}
-                  onClick={send}
-                >
-                  {conv.isRunning ? (
-                    <Loader2 className="size-4 animate-spin" strokeWidth={2} />
-                  ) : (
-                    <Send className="size-4" strokeWidth={2} />
-                  )}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span className="hidden text-xs text-muted-foreground md:inline">
+                    Enter — отправить, Shift+Enter — новая строка
+                  </span>
+                  <Button
+                    size="icon"
+                    type="button"
+                    className="size-8"
+                    aria-label="Отправить"
+                    disabled={!canSend}
+                    onClick={send}
+                  >
+                    {busy ? (
+                      <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                    ) : (
+                      <Send className="size-4" strokeWidth={2} />
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
-            <p className="mt-1.5 text-center text-[11px] text-slate-400">
-              Ответ генерируется моделью и может содержать ошибки — проверяйте важное.
-            </p>
           </div>
         </div>
 
@@ -501,15 +589,6 @@ export function AgentChat() {
             }}
           />
         ) : null}
-
-        <ConfirmDialog
-          open={confirmClear}
-          onOpenChange={setConfirmClear}
-          title="Удалить диалог с агентом?"
-          description="Диалог и реплики удалятся на сервере. Запуски агента останутся в журнале. Действие необратимо."
-          confirmLabel="Удалить"
-          onConfirm={() => void handleClear()}
-        />
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { ApiError } from "@/api/client"
 import type { AttachmentOut } from "@/api/attachments"
@@ -62,8 +62,12 @@ function fromServer(
 export function useAgentConversation(
   sessionId: number | null,
   ensureSession: () => Promise<number | null>,
+  onUserPersisted?: () => void,
 ) {
   const [messages, setMessages] = useState<AgentChatMessage[]>([])
+  // Реплики, добавленные локально в эту сессию: не теряем их, если загрузка списка
+  // с сервера (смена сессии) разрешилась уже после отправки.
+  const localAdds = useRef<{ sid: number; message: AgentChatMessage }[]>([])
   const [pending, setPending] = useState<AgentPendingExchange | null>(null)
   const [isRunning, setIsRunning] = useState(false)
 
@@ -78,7 +82,13 @@ export function useAgentConversation(
     void (async () => {
       try {
         const items = await listAgentChatMessages(sessionId)
-        if (!cancelled) setMessages(items.map(fromServer))
+        if (cancelled) return
+        const loaded = items.map(fromServer)
+        const ids = new Set(loaded.map((m) => m.id))
+        const extra = localAdds.current
+          .filter((a) => a.sid === sessionId && !ids.has(a.message.id))
+          .map((a) => a.message)
+        setMessages([...loaded, ...extra].sort((a, b) => a.createdAt - b.createdAt))
       } catch {
         /* нет PG/сети — пустой диалог; отправка всё равно попробует дописать */
       }
@@ -92,14 +102,18 @@ export function useAgentConversation(
   const persist = useCallback(
     async (role: AgentChatRole, content: string, explicitId?: number | null) => {
       const id = explicitId !== undefined ? explicitId : sessionId
-      if (id == null || !content.trim()) return
+      if (id == null || !content.trim()) return null
       try {
-        await appendAgentChatMessage(id, role, content.trim())
+        const saved = await appendAgentChatMessage(id, role, content.trim())
+        // Сервер сам ставит заголовок диалога по первой реплике — обновим список слева.
+        if (role === "user") onUserPersisted?.()
+        return { sid: id, message: fromServer(saved) }
       } catch {
         /* сервер недоступен — реплика останется только локально */
+        return null
       }
     },
-    [sessionId],
+    [sessionId, onUserPersisted],
   )
 
   const askLlm = useCallback(
@@ -194,7 +208,12 @@ export function useAgentConversation(
   /** Реплика пользователя от запуска агента (режим «Агент»): сессия гарантируется вызывающим. */
   const persistUser = useCallback(
     async (text: string, explicitId: number | null) => {
-      await persist("user", text, explicitId)
+      const added = await persist("user", text, explicitId)
+      if (added == null) return
+      localAdds.current = [...localAdds.current.slice(-20), added]
+      setMessages((cur) =>
+        cur.some((m) => m.id === added.message.id) ? cur : [...cur, added.message],
+      )
     },
     [persist],
   )

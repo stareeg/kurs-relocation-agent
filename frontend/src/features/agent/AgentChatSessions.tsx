@@ -1,13 +1,25 @@
 import { useState } from "react"
-import { MessageSquarePlus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AgentSessions } from "./use-agent-sessions"
 
-// Список серверных диалогов агента (A-3): слева, как в COWORK. Создание — кнопкой;
-// удаление — корзиной (сессия с репликами удаляется, запуски остаются в журнале).
-// Переименование придёт с U-1 (контракт PATCH уже есть).
+// Список серверных диалогов агента (A-3). Заголовок сервер ставит по первой реплике;
+// удаление — корзиной с подтверждением в строке (реплики удаляются, запуски остаются
+// в журнале). Переименование придёт с U-1 (контракт PATCH уже есть).
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  const p = (n: number) => String(n).padStart(2, "0")
+  const now = new Date()
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  return sameDay ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${p(d.getDate())}.${p(d.getMonth() + 1)}`
+}
 
 export function AgentChatSessions({
   sessions,
@@ -25,79 +37,77 @@ export function AgentChatSessions({
   const [confirmId, setConfirmId] = useState<number | null>(null)
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-white">
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Диалоги
-        </span>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7"
-          aria-label="Новый диалог"
-          onClick={onCreate}
-        >
-          <MessageSquarePlus className="size-4" strokeWidth={2} />
+    <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-card md:flex">
+      <div className="p-3">
+        <Button variant="outline" size="sm" className="w-full justify-start gap-2" onClick={onCreate}>
+          <Plus className="size-4" strokeWidth={2} />
+          Новый диалог
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div className="px-4 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Диалоги
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {sessions.sessions.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-slate-400">
-            {sessions.loading ? "Загрузка…" : "Пока нет диалогов"}
+          <p className="px-2 py-1 text-sm text-muted-foreground">
+            {sessions.loading ? "Загрузка…" : "Пока пусто"}
           </p>
         ) : (
           sessions.sessions.map((s) => (
             <div
               key={s.id}
               className={cn(
-                "group flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm",
-                s.id === activeId ? "bg-violet-100 text-slate-900" : "text-slate-600 hover:bg-slate-100",
+                "group flex items-center gap-2 rounded-lg px-2 py-2 text-sm",
+                s.id === activeId
+                  ? "bg-slate-100 font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-slate-50 hover:text-foreground",
               )}
             >
-              <button
-                type="button"
-                className="min-w-0 flex-1 truncate text-left"
-                title={s.title}
-                onClick={() => onSelect(s.id)}
-              >
-                {s.title}
-              </button>
               {confirmId === s.id ? (
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    className="text-[11px] font-semibold text-rose-600"
-                    onClick={() => {
-                      setConfirmId(null)
-                      onDelete(s.id)
-                    }}
-                  >
-                    Удалить
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[11px] text-slate-400"
-                    onClick={() => setConfirmId(null)}
-                  >
-                    Нет
-                  </button>
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                  <span className="truncate text-foreground">Удалить?</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-status-bad-fg"
+                      onClick={() => {
+                        setConfirmId(null)
+                        onDelete(s.id)
+                      }}
+                    >
+                      Да
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground"
+                      onClick={() => setConfirmId(null)}
+                    >
+                      Нет
+                    </button>
+                  </span>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  aria-label="Удалить диалог"
-                  className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover:opacity-100 hover:text-rose-500"
-                  onClick={() => {
-                    if (s.id === activeId) {
-                      setConfirmId(s.id)
-                    } else {
-                      onDelete(s.id)
-                      void toast.success("Диалог удалён")
-                    }
-                  }}
-                >
-                  <Trash2 className="size-3.5" strokeWidth={2} />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate text-left"
+                    title={s.title}
+                    onClick={() => onSelect(s.id)}
+                  >
+                    {s.title}
+                  </button>
+                  <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums group-hover:hidden">
+                    {fmtDate(s.updated_at ?? s.created_at)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Удалить диалог"
+                    className="hidden shrink-0 text-muted-foreground hover:text-status-bad-fg group-hover:block"
+                    onClick={() => setConfirmId(s.id)}
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={2} />
+                  </button>
+                </>
               )}
             </div>
           ))

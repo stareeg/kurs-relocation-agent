@@ -105,20 +105,65 @@ function MermaidBlock({ code }: { code: string }) {
 
 // ---------- Инлайн-разметка ----------
 
-// **жирный** → <strong>, ==хайлайт== → <mark> (приглушённый акцент для легенды), $формула$ →
-// KaTeX. Формула — без пробела у границ ($x$, не $ x $), иначе цепляем случайные "$150k ... $200k"
-// (валюта в резюме/вакансиях) как обрывок формулы.
+// `код` → <code>, **жирный** → <strong>, *курсив* → <em>, [текст](https://…) → ссылка,
+// ==хайлайт== → <mark> (приглушённый акцент для легенды), $формула$ → KaTeX, голые URL —
+// ссылки. Формула — без пробела у границ ($x$, не $ x $), иначе цепляем случайные
+// "$150k ... $200k" (валюта в резюме/вакансиях) как обрывок формулы. Курсив только через
+// `*`: `_` встречается в именах инструментов (read_work_terms) и ломал бы их.
+const INLINE_RE =
+  /(`[^`\n]+`|\*\*[^*]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|\*(?![\s*])[^*\n]+?(?<![\s*])\*|==[^=]+==|\$(?!\s)[^$\n]+?(?<!\s)\$)/g
+const LINK_RE = /^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/
+
+const LINK_CLS =
+  "font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
+
+function renderPlain(text: string, key: number): ReactNode {
+  if (!/https?:\/\//.test(text)) return <Fragment key={key}>{text}</Fragment>
+  return (
+    <Fragment key={key}>
+      {text.split(/(https?:\/\/[^\s<)]+)/g).map((part, j) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={j} href={part} target="_blank" rel="noopener noreferrer" className={LINK_CLS}>
+            {part}
+          </a>
+        ) : (
+          <Fragment key={j}>{part}</Fragment>
+        ),
+      )}
+    </Fragment>
+  )
+}
+
 function renderInline(text: string): ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|==[^=]+==|\$(?!\s)[^$\n]+?(?<!\s)\$)/g)
+  const parts = text.split(INLINE_RE)
   return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
+    if (!part) return null
+    if (part.length > 2 && part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={i} className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
+    if (part.length > 4 && part.startsWith("**") && part.endsWith("**")) {
       return (
         <strong key={i} className="font-semibold text-foreground">
           {part.slice(2, -2)}
         </strong>
       )
     }
-    if (part.startsWith("==") && part.endsWith("==")) {
+    const link = LINK_RE.exec(part)
+    if (link) {
+      return (
+        <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className={LINK_CLS}>
+          {link[1]}
+        </a>
+      )
+    }
+    if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) {
+      return <em key={i}>{part.slice(1, -1)}</em>
+    }
+    if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
       return (
         <mark key={i} className="rounded bg-amber-100/70 px-1 font-medium text-foreground">
           {part.slice(2, -2)}
@@ -128,20 +173,32 @@ function renderInline(text: string): ReactNode {
     if (part.startsWith("$") && part.endsWith("$") && part.length > 2) {
       return <InlineMath key={i} tex={part.slice(1, -1)} />
     }
-    return <Fragment key={i}>{part}</Fragment>
+    return renderPlain(part, i)
   })
 }
 
+type ListItem = { text: string; depth: number }
+
 type Block =
-  | { kind: "h1" | "h2" | "h3" | "p"; text: string }
-  | { kind: "ul" | "ol"; items: string[] }
+  | { kind: "h1" | "h2" | "h3" | "h4" | "p" | "quote"; text: string }
+  | { kind: "ul" | "ol"; items: ListItem[] }
+  | { kind: "table"; head: string[]; rows: string[][] }
+  | { kind: "hr" }
   | { kind: "code"; lang: string; code: string }
   | { kind: "mathblock"; tex: string }
 
-// Группируем строки в блоки: подряд идущие пункты списка → один <ul>/<ol>.
+function splitRow(line: string): string[] {
+  const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "")
+  return inner.split("|").map((c) => c.trim())
+}
+
+const TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
+
+// Группируем строки в блоки: подряд идущие пункты списка → один <ul>/<ol>, строки таблицы
+// (`| a | b |` + разделитель `|---|`) → одна таблица, подряд идущие `> ` → одна цитата.
 function parseTextBlocks(md: string): Block[] {
   const blocks: Block[] = []
-  let list: { kind: "ul" | "ol"; items: string[] } | null = null
+  let list: { kind: "ul" | "ol"; items: ListItem[] } | null = null
 
   const flush = () => {
     if (list) {
@@ -150,31 +207,60 @@ function parseTextBlocks(md: string): Block[] {
     }
   }
 
-  for (const raw of md.split("\n")) {
-    const line = raw.trimEnd()
-    const bullet = /^[-*]\s+(.*)$/.exec(line)
-    const ordered = /^\d+\.\s+(.*)$/.exec(line)
+  const lines = md.split("\n")
+  for (let idx = 0; idx < lines.length; idx++) {
+    const line = lines[idx].trimEnd()
+    const bullet = /^(\s*)[-*•]\s+(.*)$/.exec(line)
+    const ordered = /^(\s*)\d+[.)]\s+(.*)$/.exec(line)
 
-    if (bullet) {
-      if (list?.kind !== "ul") {
+    if (bullet && !/^\s*([-*])\s*\1\s*\1[\s\-*]*$/.test(line)) {
+      const depth = Math.min(2, Math.floor(bullet[1].length / 2))
+      if (list?.kind !== "ul" && !(list && depth > 0)) {
         flush()
         list = { kind: "ul", items: [] }
       }
-      list.items.push(bullet[1])
+      list!.items.push({ text: bullet[2], depth })
       continue
     }
     if (ordered) {
-      if (list?.kind !== "ol") {
+      const depth = Math.min(2, Math.floor(ordered[1].length / 2))
+      if (list?.kind !== "ol" && !(list && depth > 0)) {
         flush()
         list = { kind: "ol", items: [] }
       }
-      list.items.push(ordered[1])
+      list!.items.push({ text: ordered[2], depth })
       continue
     }
 
     flush()
     if (!line.trim()) continue
-    if (line.startsWith("### ")) blocks.push({ kind: "h3", text: line.slice(4) })
+
+    // Таблица: строка с `|` и следом строка-разделитель.
+    if (line.includes("|") && idx + 1 < lines.length && TABLE_SEP_RE.test(lines[idx + 1])) {
+      const head = splitRow(line)
+      const rows: string[][] = []
+      idx += 2
+      while (idx < lines.length && lines[idx].includes("|") && lines[idx].trim()) {
+        rows.push(splitRow(lines[idx]))
+        idx++
+      }
+      idx--
+      blocks.push({ kind: "table", head, rows })
+      continue
+    }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
+      blocks.push({ kind: "hr" })
+      continue
+    }
+    if (line.startsWith(">")) {
+      const text = line.replace(/^>\s?/, "")
+      const prev = blocks[blocks.length - 1]
+      if (prev?.kind === "quote") prev.text += `\n${text}`
+      else blocks.push({ kind: "quote", text })
+      continue
+    }
+    if (line.startsWith("#### ")) blocks.push({ kind: "h4", text: line.slice(5) })
+    else if (line.startsWith("### ")) blocks.push({ kind: "h3", text: line.slice(4) })
     else if (line.startsWith("## ")) blocks.push({ kind: "h2", text: line.slice(3) })
     else if (line.startsWith("# ")) blocks.push({ kind: "h1", text: line.slice(2) })
     else blocks.push({ kind: "p", text: line })
@@ -233,9 +319,19 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
               {renderInline(b.text)}
             </h3>
           )
+        if (b.kind === "h4")
+          return (
+            <h4 key={i} className="mt-3 text-sm font-semibold text-foreground">
+              {renderInline(b.text)}
+            </h4>
+          )
         if (b.kind === "ul" || b.kind === "ol") {
           const cls = `${b.kind === "ul" ? "list-disc" : "list-decimal"} space-y-1 pl-5 ${liBase}`
-          const items = b.items.map((it, j) => <li key={j}>{renderInline(it)}</li>)
+          const items = b.items.map((it, j) => (
+            <li key={j} className={it.depth === 1 ? "ml-5" : it.depth === 2 ? "ml-10" : undefined}>
+              {renderInline(it.text)}
+            </li>
+          ))
           return b.kind === "ul" ? (
             <ul key={i} className={cls}>
               {items}
@@ -246,6 +342,46 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
             </ol>
           )
         }
+        if (b.kind === "table")
+          return (
+            <div key={i} className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full border-collapse text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    {b.head.map((cell, j) => (
+                      <th
+                        key={j}
+                        className="border-b border-border px-3 py-2 text-left font-semibold text-foreground"
+                      >
+                        {renderInline(cell)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((row, r) => (
+                    <tr key={r} className="border-b border-border last:border-b-0">
+                      {b.head.map((_, j) => (
+                        <td key={j} className="px-3 py-2 align-top text-foreground">
+                          {renderInline(row[j] ?? "")}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        if (b.kind === "hr") return <hr key={i} className="border-border" />
+        if (b.kind === "quote")
+          return (
+            <blockquote
+              key={i}
+              className={`whitespace-pre-line border-l-2 border-border pl-3 ${chat ? "text-base" : "text-sm"} text-muted-foreground`}
+            >
+              {renderInline(b.text)}
+            </blockquote>
+          )
         if (b.kind === "code")
           return b.lang === "mermaid" ? (
             <MermaidBlock key={i} code={b.code} />
@@ -255,7 +391,7 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
         if (b.kind === "mathblock") return <MathBlock key={i} tex={b.tex} />
         return (
           <p key={i} className={pCls}>
-            {renderInline(b.kind === "p" ? b.text : "")}
+            {renderInline("text" in b ? b.text : "")}
           </p>
         )
       })}
