@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { ChatPage } from "./ChatPage"
@@ -21,15 +21,17 @@ beforeAll(() => {
 
 afterEach(cleanup)
 
+function json(data: unknown) {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      new Response(JSON.stringify({}), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ),
+    vi.fn(async () => json({})),
   )
 })
 
@@ -49,25 +51,93 @@ function renderChat(initialEntry = "/chat") {
   )
 }
 
-describe("ChatPage — главный экран «Агент»", () => {
-  it("пустой экран — приветствие, примеры целей, композер и список серверных диалогов", async () => {
+describe("ChatPage — главный экран «Агент» (U-5)", () => {
+  it("пустой экран: приветствие, примеры, один режим ввода, панель «Ход работы» справа", async () => {
     renderChat()
     expect(screen.getByRole("heading", { name: "Агент по валютной удалёнке" })).toBeTruthy()
-    // Режим «Агент» включён по умолчанию; переключатель «Агент / Чат» рядом с композером.
     expect(screen.getByPlaceholderText("Опишите задачу для агента")).toBeTruthy()
-    // Список диалогов слева и кнопка «Диалоги» для узкого экрана.
-    expect((await screen.findAllByText("Диалоги")).length).toBeGreaterThan(0)
-    expect(screen.getByRole("button", { name: "Агент" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Чат" })).toBeTruthy()
+    // Переключателя «Агент / Чат», выбора модели и вложений больше нет.
+    expect(screen.queryByRole("button", { name: "Чат" })).toBeNull()
+    expect(screen.queryByLabelText("Модель")).toBeNull()
+    expect(screen.queryByLabelText("Приложить файл")).toBeNull()
+    // Колонки диалогов на экране нет (они в меню); на узком экране — кнопка «Диалоги».
+    expect(screen.queryByRole("button", { name: "Новый диалог" })).toBeNull()
+    expect(screen.getByRole("button", { name: /Диалоги/ })).toBeTruthy()
+    // Панель открыта по умолчанию и честно пустая.
+    const panel = screen.getByRole("complementary", { name: "Ход работы" })
+    expect(panel.textContent).toMatch(/В этом диалоге ещё нет запусков/)
     // Примеры целей: клик подставляет цель в композер.
-    const example = screen.getByRole("button", { name: /no-such-job/ })
-    example.click()
-    expect(
-      (await screen.findByDisplayValue(/no-such-job/)) as HTMLTextAreaElement,
-    ).toBeTruthy()
-    // Переписка с HR переехала в «Вакансии»: кнопок списков и «контекстов» здесь больше нет.
-    expect(screen.queryByText("Архив")).toBeNull()
-    expect(screen.queryByText("Контексты")).toBeNull()
+    screen.getByRole("button", { name: /no-such-job/ }).click()
+    expect((await screen.findByDisplayValue(/no-such-job/)) as HTMLTextAreaElement).toBeTruthy()
+  })
+
+  it("панель сворачивается, состояние помнится в localStorage", () => {
+    renderChat()
+    fireEvent.click(screen.getByRole("button", { name: "Свернуть панель «Ход работы»" }))
+    expect(screen.queryByRole("complementary", { name: "Ход работы" })).toBeNull()
+    expect(localStorage.getItem("copilot.agent.work-panel")).toBe("0")
+    fireEvent.click(screen.getByRole("button", { name: "Открыть панель «Ход работы»" }))
+    expect(screen.getByRole("complementary", { name: "Ход работы" })).toBeTruthy()
+    expect(localStorage.getItem("copilot.agent.work-panel")).toBe("1")
+  })
+
+  it("запуск в ленте — компактная карточка, подробности — в панели", async () => {
+    const goal = "Проверь условия найма вакансии no-such-job"
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith("/api/agent/chats")) {
+          return json({ items: [{ id: 7, title: "2. Ошибка инструмента", created_at: null, updated_at: null }] })
+        }
+        if (url.includes("/api/agent/chats/7/messages")) {
+          return json({
+            items: [{ id: 1, session_id: 7, role: "user", content: goal, created_at: "2026-11-16T10:00:00Z" }],
+          })
+        }
+        if (url.includes("/events/replay")) {
+          return json({
+            items: [
+              { id: 1, type: "plan_created", payload: { plan: [{ id: "s1", title: "Прочитать условия", status: "done" }] } },
+              { id: 2, type: "step_started", payload: { index: 1, step_id: "s1", title: "Прочитать условия" } },
+              {
+                id: 3,
+                type: "tool_called",
+                payload: { step_id: "s1", tool: "read_work_terms", ok: false, error: "вакансия no-such-job не найдена" },
+              },
+              { id: 4, type: "done", payload: { answer: "Вакансии нет в базе." } },
+            ],
+          })
+        }
+        if (url.includes("/api/agent/runs?session_id=7")) {
+          return json({
+            items: [
+              {
+                id: 11,
+                goal,
+                status: "done",
+                session_id: 7,
+                stop_reason: "answered",
+                answer: "Вакансии нет в базе.",
+                error: null,
+                created_at: "2026-11-16T10:00:01Z",
+                updated_at: "2026-11-16T10:00:30Z",
+              },
+            ],
+          })
+        }
+        return json({})
+      }),
+    )
+    renderChat()
+    expect(await screen.findByText("Вакансии нет в базе.")).toBeTruthy()
+    expect(screen.getAllByText("2. Ошибка инструмента").length).toBeGreaterThan(0)
+    const panel = screen.getByRole("complementary", { name: "Ход работы" })
+    // Ошибка инструмента видна в панели без раскрытия ленты.
+    expect(panel.textContent).toMatch(/Ошибка: вакансия no-such-job не найдена/)
+    expect(panel.textContent).toMatch(/Прочитать условия/)
+    // Цель уже видна репликой — в карточке не дублируется.
+    expect(screen.getAllByText(goal)).toHaveLength(2) // реплика + цель в шапке панели
   })
 
   it("старая история из localStorage переносится в серверную сессию (A-3)", { timeout: 20_000 }, async () => {
@@ -86,11 +156,6 @@ describe("ChatPage — главный экран «Агент»", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         const method = (init?.method ?? "GET").toUpperCase()
-        const json = (data: unknown) =>
-          new Response(JSON.stringify(data), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
         if (url.endsWith("/api/agent/chats") && method === "GET") {
           return json({
             items:

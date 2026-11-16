@@ -9,6 +9,7 @@ import { useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 
 import { AgentChat } from "@/features/agent/AgentChat"
+import { AgentSessionsBoundary } from "@/features/agent/AgentSessionsProvider"
 
 export function ChatPage() {
   const navigate = useNavigate()
@@ -29,5 +30,10 @@ export function ChatPage() {
     )
   }, [deepVacancy, navigate, setSearchParams])
 
-  return <AgentChat />
+  // Диалоги приходят из оболочки (меню, U-5); без оболочки экран поднимает их сам.
+  return (
+    <AgentSessionsBoundary>
+      <AgentChat />
+    </AgentSessionsBoundary>
+  )
 }

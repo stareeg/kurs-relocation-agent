@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   createAgentChat,
   deleteAgentChat,
@@ -9,6 +9,7 @@ import {
 
 // Сессии главного чата (A-3): серверные диалоги вместо localStorage-треда.
 // Активная сессия помнится в localStorage — на перезагрузке вкладка открывает тот же диалог.
+// Хук держит провайдер `AgentSessionsProvider` (U-5): меню и экран читают одно состояние.
 
 const ACTIVE_SESSION_KEY = "copilot.agent-chat.session"
 
@@ -93,7 +94,12 @@ export function useAgentSessions() {
     }
   }, [])
 
-  return { sessions, activeId, setActiveId, loading, refresh, create, remove, rename }
+  // Значение контекста меню и экрана (U-5): новый объект — только когда что-то поменялось,
+  // иначе экран агента перерисовывался бы на каждый рендер оболочки.
+  return useMemo(
+    () => ({ sessions, activeId, setActiveId, loading, refresh, create, remove, rename }),
+    [sessions, activeId, loading, refresh, create, remove, rename],
+  )
 }
 
 export type AgentSessions = ReturnType<typeof useAgentSessions>

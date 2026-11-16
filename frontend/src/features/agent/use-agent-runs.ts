@@ -47,7 +47,9 @@ export type RunView = {
 }
 
 const TERMINAL: AgentRunStatus[] = ["done", "failed", "cancelled"]
-const VISIBLE_EVENT_CAP = 80
+// Панель «Ход работы» (U-5) считает вызовы и ошибки по всем событиям запуска: потолок —
+// с запасом над лимитом replay (500), а не «последние N строк журнала», как раньше.
+const VISIBLE_EVENT_CAP = 1000
 
 function toEvent(e: { seq: number | null; data: Record<string, unknown> }): AgentEvent | null {
   const type = typeof e.data.type === "string" ? e.data.type : null

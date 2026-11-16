@@ -46,6 +46,8 @@ import { useAvatarMeta, useDeleteAvatar, useUploadAvatar } from "@/features/sett
 import { captureNavBlocked, captureNavClick } from "@/lib/error-capture"
 import { AdminAttentionBadge } from "@/features/admin/components/AdminAttentionBadge"
 import { useImmersive } from "@/features/multiplayer/immersive"
+import { AgentNavSessions } from "@/features/agent/AgentNavSessions"
+import { AgentSessionsProvider } from "@/features/agent/AgentSessionsProvider"
 import { NavNotifications } from "./NavNotifications"
 
 type NavItem = { to: string; label: string; icon: typeof MessageSquare }
@@ -59,7 +61,8 @@ type NavItem = { to: string; label: string; icon: typeof MessageSquare }
 // случайным кликом по собственному имени, не существует. Сам футер теперь ведёт в «Аккаунт»
 // (см. SidebarProfile) — и нижний пункт «Аккаунт» из рельса убран, чтобы не дублировать.
 // U-0: «Агент» — первым пунктом (стартовая страница курса), разделы вне сценария агента
-// скрываются флагами из статуса входа (`features/auth/sections.ts`).
+// скрываются флагами из статуса входа (`features/auth/sections.ts`). U-5: под пунктом
+// «Агент» — его диалоги (как в Claude Cowork), отдельной колонки диалогов на экране нет.
 const NAV_GROUPS: ReadonlyArray<ReadonlyArray<NavItem>> = [
   [
     { to: "/chat", label: "Агент", icon: MessageSquare },
@@ -597,7 +600,12 @@ function FullShell({ isAdmin, authStatus }: { isAdmin: boolean; authStatus: Auth
               )
             }
 
-            return <Fragment key={to}>{link}</Fragment>
+            return (
+              <Fragment key={to}>
+                {link}
+                {to === "/chat" && !navCollapsed ? <AgentNavSessions /> : null}
+              </Fragment>
+            )
           })}
         </Fragment>
       ))}
@@ -641,9 +649,12 @@ export function AppShell() {
   // Гейт (AUTH-1): anon или незавершённый онбординг → серое меню, только «Параметры».
   // Пока статус не загружен (data undefined), считаем гейт открытым — не мигать серым зря.
   const gated = status === "anon" || (authStatus ? !isGateOpen(authStatus) : false)
+  // Диалоги агента (U-5) нужны и меню, и экрану — один провайдер на открытую оболочку.
   return gated ? (
     <GatedShell authStatus={authStatus} />
   ) : (
-    <FullShell isAdmin={Boolean(authStatus?.is_admin)} authStatus={authStatus} />
+    <AgentSessionsProvider>
+      <FullShell isAdmin={Boolean(authStatus?.is_admin)} authStatus={authStatus} />
+    </AgentSessionsProvider>
   )
 }

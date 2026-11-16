@@ -1,75 +1,46 @@
 /**
- * Агент — главный экран: диалоги слева (сервер, A-3), лента и композер справа.
+ * Агент — главный экран (U-5, раскладка Claude Cowork): диалоги живут в основном меню под
+ * пунктом «Агент», в центре лента реплик и компактных карточек запусков с композером, справа
+ * сворачиваемая панель «Ход работы» по выбранному запуску (по умолчанию — последнему).
  *
- * Два режима композера: «Агент» (по умолчанию) — сообщение уходит фоновым запуском графа
- * с планом, инструментами и подтверждением действий, ход работы виден в блоке запуска;
- * «Чат» — обычный стрим ответа модели с выбором тира и вложениями. Переписка с HR живёт
- * в дровере вакансии.
+ * Один режим ввода: каждое сообщение — фоновый запуск агента с планом, инструментами и
+ * подтверждением действий. Обычный чат с моделью остался в API для сравнения в eval (E-2),
+ * его старые реплики в истории диалога показываются как есть. На узком экране диалоги и
+ * панель открываются шторками.
  *
  * Лента держится внизу, пока пользователь сам не отмотал вверх: ResizeObserver на
- * содержимом ловит и новые сообщения, и токены стрима, и события запуска.
+ * содержимом ловит и новые реплики, и события запуска.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, Copy, Loader2, Menu, Paperclip, Send } from "lucide-react"
+import { ArrowDown, Copy, Loader2, Menu, PanelRightOpen, Send } from "lucide-react"
+import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { linkify } from "@/components/chat/linkify"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { SegmentedControl } from "@/components/ui/segmented-control"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { MarkdownView } from "@/components/markdown-view"
-import { AttachmentChips } from "@/components/chat/attachments/AttachmentChips"
-import { AttachmentGrid } from "@/components/chat/attachments/AttachmentGrid"
-import { ImageCropper } from "@/components/chat/attachments/ImageCropper"
-import {
-  ACCEPTED_ATTACHMENT_MIME,
-  isImageFile,
-  usePasteImages,
-} from "@/components/chat/attachments/use-paste-images"
-import {
-  useAttachmentUpload,
-  type PendingAttachment,
-} from "@/components/chat/attachments/use-attachment-upload"
-import type { AttachmentOut } from "@/api/attachments"
-import {
-  useAgentConversation,
-  type AgentChatMessage,
-  type AgentChatTier,
-} from "./use-agent-conversation"
-import { useAgentSessions } from "./use-agent-sessions"
-import { useAgentRuns, type RunView } from "./use-agent-runs"
-import { AgentRunView, type VacancyRef } from "./AgentRunView"
+import { usePersistedBoolean } from "@/lib/use-persisted-boolean"
+import { useMediaQuery } from "@/lib/use-media-query"
+import { appendAgentChatMessage, createAgentChat } from "@/api/agent"
+import type { Job } from "@/api/jobs"
+import { JobDetailDrawer } from "@/features/jobs/JobDetailDrawer"
 import { useJobs } from "@/features/jobs/use-jobs"
 import { useResumeData } from "@/features/resume/use-resume"
-import { Link } from "react-router-dom"
-import { JobDetailDrawer } from "@/features/jobs/JobDetailDrawer"
-import type { Job } from "@/api/jobs"
-import { AgentChatSessions } from "./AgentChatSessions"
-import { appendAgentChatMessage, createAgentChat } from "@/api/agent"
+import { useAgentSessionsContext } from "./agent-sessions-context"
+import { AgentRunCard } from "./AgentRunCard"
+import { AgentSessionList } from "./AgentSessionList"
+import { AgentWorkPanel } from "./AgentWorkPanel"
+import type { VacancyRef } from "./run-summary"
+import { useAgentConversation, type AgentChatMessage } from "./use-agent-conversation"
+import { useAgentRuns, type RunView } from "./use-agent-runs"
 
-const TIER_STORAGE_KEY = "copilot.agent-chat.tier"
-const MODE_STORAGE_KEY = "copilot.agent-chat.mode"
 const MIGRATED_KEY = "copilot.agent-chat.migrated-v2"
-
-type ComposerMode = "agent" | "chat"
-
-const MODE_OPTIONS = [
-  { value: "agent", label: "Агент", title: "План, инструменты продукта, подтверждение действий" },
-  { value: "chat", label: "Чат", title: "Обычный ответ модели без инструментов" },
-] as const
-
-const TIER_OPTIONS: { value: AgentChatTier; label: string }[] = [
-  { value: "", label: "Авто" },
-  { value: "advanced", label: "Умная" },
-  { value: "basic", label: "Быстрая" },
-]
+/** Панель «Ход работы» открыта/свёрнута на широком экране — переживает перезагрузку. */
+const PANEL_KEY = "copilot.agent.work-panel"
+/** С этой ширины панель стоит колонкой справа, уже — открывается шторкой. */
+const WIDE_QUERY = "(min-width: 1024px)"
 
 // Цели для быстрого старта: обычный сценарий, сценарий с ошибкой инструмента
 // (вакансии с таким id нет — агент должен заметить ошибку и найти замену) и действие
@@ -79,31 +50,6 @@ const EXAMPLE_GOALS = [
   "Проверь условия найма вакансии no-such-job; если её нет в базе, найди похожую и оцени",
   "Подбери лучшую вакансию под мой профиль, напиши короткое сопроводительное письмо и поставь отклик",
 ]
-
-function loadTier(): AgentChatTier {
-  try {
-    const raw = localStorage.getItem(TIER_STORAGE_KEY)
-    return raw === "advanced" || raw === "basic" ? raw : ""
-  } catch {
-    return ""
-  }
-}
-
-function loadMode(): ComposerMode {
-  try {
-    return localStorage.getItem(MODE_STORAGE_KEY) === "chat" ? "chat" : "agent"
-  } catch {
-    return "agent"
-  }
-}
-
-function store(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    /* ignore */
-  }
-}
 
 function fmtTime(ms: number): string {
   const d = new Date(ms)
@@ -124,39 +70,21 @@ function copyText(text: string) {
   )
 }
 
-function UserMessage({
-  body,
-  time,
-  attachments = [],
-}: {
-  body: string
-  time?: string
-  attachments?: AttachmentOut[]
-}) {
+function UserMessage({ body, time }: { body: string; time?: string }) {
   return (
     <div className="flex flex-col items-end">
       <div className="max-w-[75%] rounded-2xl rounded-br-md bg-slate-100 px-4 py-2.5">
-        {attachments.length > 0 ? <AttachmentGrid attachments={attachments} className="mb-1" /> : null}
-        {body ? (
-          <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-foreground">
-            {linkify(body)}
-          </p>
-        ) : null}
+        <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-foreground">
+          {linkify(body)}
+        </p>
       </div>
       {time ? <span className="mt-1 text-xs text-muted-foreground tabular-nums">{time}</span> : null}
     </div>
   )
 }
 
-function AssistantMessage({
-  body,
-  time,
-  error,
-}: {
-  body: string
-  time?: string
-  error?: boolean
-}) {
+/** Реплика модели из старого режима «Чат» в истории диалога. */
+function AssistantMessage({ body, time, error }: { body: string; time?: string; error?: boolean }) {
   return (
     <div className="group">
       <div className={cn(error && "rounded-lg bg-status-bad-soft px-3 py-2 text-status-bad-fg")}>
@@ -182,18 +110,10 @@ type ThreadItem =
   | { kind: "run"; at: number; view: RunView }
 
 export function AgentChat() {
-  const sessions = useAgentSessions()
+  const sessions = useAgentSessionsContext()
   const refreshSessions = sessions.refresh
   const onUserPersisted = useCallback(() => void refreshSessions(), [refreshSessions])
-  const conv = useAgentConversation(
-    sessions.activeId,
-    async () => {
-      if (sessions.activeId != null) return sessions.activeId
-      const created = await sessions.create()
-      return created?.id ?? null
-    },
-    onUserPersisted,
-  )
+  const conv = useAgentConversation(sessions.activeId, onUserPersisted)
   const runs = useAgentRuns(sessions.activeId)
   const jobsQuery = useJobs()
   const jobs = jobsQuery.data
@@ -209,36 +129,63 @@ export function AgentChat() {
   const jobsEmpty = jobsQuery.isSuccess && (jobs ?? []).filter(Boolean).length === 0
   const [sessionsOpen, setSessionsOpen] = useState(false)
 
-  // Вакансии аккаунта по id: название вместо id в карточке подтверждения и чипы
-  // «Вакансии в запуске», клик открывает дровер вакансии прямо поверх чата.
+  // ------------------------------------------------------------- панель «Ход работы»
+  const wide = useMediaQuery(WIDE_QUERY, true)
+  const [panelOpen, setPanelOpen] = usePersistedBoolean(PANEL_KEY, true)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const panelShown = wide ? panelOpen : sheetOpen
+  // Запуск в панели: выбранный кликом по карточке, иначе последний в диалоге.
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
+  const [prevSessionId, setPrevSessionId] = useState(sessions.activeId)
+  if (prevSessionId !== sessions.activeId) {
+    // Другой диалог — панель снова показывает его последний запуск (сброс во время рендера).
+    setPrevSessionId(sessions.activeId)
+    setSelectedRunId(null)
+  }
+  const runList = runs.runs
+  const selectedIdx =
+    selectedRunId != null ? runList.findIndex((r) => r.run.id === selectedRunId) : -1
+  const panelIdx = selectedIdx >= 0 ? selectedIdx : runList.length - 1
+  const panelRun = panelIdx >= 0 ? runList[panelIdx] : null
+
+  function openPanel() {
+    if (wide) setPanelOpen(true)
+    else setSheetOpen(true)
+  }
+
+  function showWork(runId: number) {
+    setSelectedRunId(runId)
+    openPanel()
+  }
+
+  // Вакансии аккаунта по id: название вместо id в карточке подтверждения, список и балл
+  // в панели; клик открывает дровер вакансии прямо поверх экрана агента.
   const vacancies = useMemo(() => {
     const map = new Map<string, VacancyRef>()
     for (const job of jobs ?? []) {
-      if (job?.vacancy_id && job.title) map.set(job.vacancy_id, { title: job.title, company: job.company ?? null })
+      if (job?.vacancy_id && job.title) {
+        map.set(job.vacancy_id, {
+          title: job.title,
+          company: job.company ?? null,
+          score: job.overall_score ?? null,
+        })
+      }
     }
     return map
   }, [jobs])
 
   function openVacancy(vacancyId: string) {
     const job = (jobs ?? []).find((j) => j?.vacancy_id === vacancyId)
-    if (job) setOpenJob(job)
-    else toast.error("Вакансии нет в базе аккаунта")
+    if (!job) {
+      toast.error("Вакансии нет в базе аккаунта")
+      return
+    }
+    setSheetOpen(false)
+    setOpenJob(job)
   }
+
   const [text, setText] = useState("")
-  const [tier, setTier] = useState<AgentChatTier>(loadTier)
-  const [mode, setMode] = useState<ComposerMode>(loadMode)
-  const agentMode = mode === "agent"
-  const attachments = useAttachmentUpload()
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  const [cropTarget, setCropTarget] = useState<{ key: string; attachment: AttachmentOut } | null>(
-    null,
-  )
-  const paste = usePasteImages({
-    onFiles: attachments.addFiles,
-    queuedCount: attachments.items.length,
-    disabled: attachments.isUploading,
-  })
 
   // Разовый перенос старого localStorage-диалога в серверную сессию (A-3): один раз,
   // только если серверных сессий ещё нет и локальная история непуста.
@@ -258,7 +205,11 @@ export function AgentChat() {
     } catch {
       legacy = []
     }
-    store(MIGRATED_KEY, "1")
+    try {
+      localStorage.setItem(MIGRATED_KEY, "1")
+    } catch {
+      /* ignore */
+    }
     if (legacy.length === 0) return
     void (async () => {
       try {
@@ -275,17 +226,17 @@ export function AgentChat() {
     })()
   }, [sessions])
 
-  const hasMessages = conv.messages.length > 0 || conv.pending != null || runs.runs.length > 0
+  const hasMessages = conv.messages.length > 0 || runList.length > 0
 
   const thread = useMemo<ThreadItem[]>(() => {
     const items: ThreadItem[] = [
       ...conv.messages.map((m) => ({ kind: "message", at: m.createdAt, message: m }) as ThreadItem),
-      ...runs.runs.map((r) => ({ kind: "run", at: r.createdAtMs, view: r }) as ThreadItem),
+      ...runList.map((r) => ({ kind: "run", at: r.createdAtMs, view: r }) as ThreadItem),
     ]
     return items.sort((a, b) => a.at - b.at)
-  }, [conv.messages, runs.runs])
+  }, [conv.messages, runList])
 
-  // Цель запуска уже видна репликой пользователя — в блоке запуска её не дублируем.
+  // Цель запуска уже видна репликой пользователя — в карточке запуска её не дублируем.
   const userTexts = useMemo(
     () => new Set(conv.messages.filter((m) => m.role === "user").map((m) => m.content.trim())),
     [conv.messages],
@@ -329,107 +280,84 @@ export function AgentChat() {
     setShowDown(!atBottom)
   }
 
-  const readyAttachments = useMemo(
-    () =>
-      attachments.items
-        .filter((i): i is PendingAttachment & { attachment: AttachmentOut } => i.attachment != null)
-        .map((i) => i.attachment),
-    [attachments.items],
-  )
-
-  const agentBusy = agentMode && runs.hasActive
-  const busy = conv.isRunning || agentBusy
-  const canSend =
-    !busy && (text.trim().length > 0 || (!agentMode && attachments.attachmentIds.length > 0))
+  const busy = runs.hasActive
+  const canSend = !busy && text.trim().length > 0
 
   function send() {
-    const t = text.trim()
+    const goal = text.trim()
     if (!canSend) return
     setText("")
-    pinned.current = true
-    if (agentMode) {
-      void sendAgentRun(t)
-      return
-    }
-    conv.askLlm(t, readyAttachments, tier)
-    attachments.clear()
-  }
-
-  /** Режим «Агент»: цель → фоновый запуск (бэкенд сам пишет события в БД и SSE). */
-  function retryRun(goal: string) {
-    if (conv.isRunning || runs.hasActive) return
     pinned.current = true
     void sendAgentRun(goal)
   }
 
+  function retryRun(goal: string) {
+    if (runs.hasActive) return
+    pinned.current = true
+    void sendAgentRun(goal)
+  }
+
+  /** Цель → фоновый запуск (бэкенд сам пишет события в БД и SSE); панель — на новый запуск. */
   async function sendAgentRun(goal: string) {
     const sid = sessions.activeId ?? (await sessions.create())?.id ?? null
     if (sid == null) {
       toast.error("Не удалось создать диалог — проверьте доступ к серверу")
       return
     }
+    setSelectedRunId(null)
     await conv.persistUser(goal, sid)
     const ok = await runs.start(goal, sid)
     if (!ok) toast.error("Запуск не стартовал — проверьте доступ к серверу")
   }
 
   function pickExample(goal: string) {
-    setMode("agent")
-    store(MODE_STORAGE_KEY, "agent")
     setText(goal)
     requestAnimationFrame(() => composerRef.current?.querySelector("textarea")?.focus())
   }
 
+  const title = sessions.sessions.find((x) => x.id === sessions.activeId)?.title ?? "Новый диалог"
+
+  const panel = (onClose?: () => void) => (
+    <AgentWorkPanel
+      view={panelRun}
+      runIndex={panelIdx + 1}
+      runCount={runList.length}
+      vacancies={vacancies}
+      onOpenVacancy={openVacancy}
+      onClose={onClose}
+    />
+  )
+
   return (
     <div className="flex min-h-0 flex-1 bg-background">
-      <AgentChatSessions
-        sessions={sessions}
-        activeId={sessions.activeId}
-        onSelect={(id) => sessions.setActiveId(id)}
-        onCreate={() => sessions.setActiveId(null)}
-        onDelete={(id) => void sessions.remove(id)}
-      />
-
-      {sessionsOpen ? (
-        <div className="fixed inset-0 z-40 flex md:hidden">
-          <AgentChatSessions
-            className="flex h-full shadow-xl"
-            sessions={sessions}
-            activeId={sessions.activeId}
-            onSelect={(id) => {
-              sessions.setActiveId(id)
-              setSessionsOpen(false)
-            }}
-            onCreate={() => {
-              sessions.setActiveId(null)
-              setSessionsOpen(false)
-            }}
-            onDelete={(id) => void sessions.remove(id)}
-          />
-          <button
-            type="button"
-            aria-label="Закрыть список диалогов"
-            className="flex-1 bg-black/30"
-            onClick={() => setSessionsOpen(false)}
-          />
-        </div>
-      ) : null}
-
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 md:hidden">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
           <Button
             size="sm"
             variant="ghost"
-            className="gap-1.5"
+            className="-ml-2 gap-1.5 md:hidden"
             onClick={() => setSessionsOpen(true)}
           >
             <Menu className="size-4" strokeWidth={2} />
             Диалоги
           </Button>
-          <span className="min-w-0 truncate text-sm text-muted-foreground">
-            {sessions.sessions.find((x) => x.id === sessions.activeId)?.title ?? "Новый диалог"}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={title}>
+            {title}
           </span>
+          {!panelShown ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="-mr-2 gap-1.5 text-muted-foreground"
+              aria-label="Открыть панель «Ход работы»"
+              onClick={openPanel}
+            >
+              <PanelRightOpen className="size-4" strokeWidth={2} />
+              Ход работы
+            </Button>
+          ) : null}
         </div>
+
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
           <div ref={contentRef} className="mx-auto w-full max-w-5xl px-6 py-6">
             {hasMessages ? (
@@ -441,7 +369,6 @@ export function AgentChat() {
                         key={item.message.id}
                         body={item.message.content}
                         time={fmtTime(item.message.createdAt)}
-                        attachments={item.message.attachments}
                       />
                     ) : (
                       <AssistantMessage
@@ -452,14 +379,16 @@ export function AgentChat() {
                       />
                     )
                   ) : (
-                    <AgentRunView
+                    <AgentRunCard
                       key={`run-${item.view.run.id}`}
                       view={item.view}
                       showGoal={!userTexts.has(item.view.run.goal.trim())}
+                      selected={panelShown && panelRun?.run.id === item.view.run.id}
                       vacancies={vacancies}
+                      onShowWork={showWork}
                       onOpenVacancy={openVacancy}
                       onRetry={retryRun}
-                      retryDisabled={conv.isRunning || runs.hasActive}
+                      retryDisabled={runs.hasActive}
                       onApprove={(runId, approved) => {
                         pinned.current = true
                         void runs.approve(runId, approved).catch(() =>
@@ -469,23 +398,6 @@ export function AgentChat() {
                     />
                   ),
                 )}
-                {conv.pending ? (
-                  <>
-                    <UserMessage
-                      body={conv.pending.question}
-                      time={fmtTime(conv.pending.askedAt)}
-                      attachments={conv.pending.attachments}
-                    />
-                    {conv.pending.answer ? (
-                      <AssistantMessage body={conv.pending.answer} error={conv.pending.error} />
-                    ) : conv.isRunning ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="size-4 animate-spin" strokeWidth={2} />
-                        Отвечаю…
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
               </div>
             ) : (
               <div className="mx-auto flex min-h-[50vh] max-w-2xl flex-col justify-center py-10">
@@ -546,7 +458,7 @@ export function AgentChat() {
           <Button
             size="sm"
             variant="outline"
-            className="absolute bottom-36 left-1/2 -translate-x-1/2 gap-1.5 rounded-full bg-card shadow-md"
+            className="absolute bottom-32 left-1/2 -translate-x-1/2 gap-1.5 rounded-full bg-card shadow-md"
             onClick={() => {
               pinned.current = true
               setShowDown(false)
@@ -562,37 +474,15 @@ export function AgentChat() {
           <div className="mx-auto w-full max-w-5xl px-6 pb-5 pt-2">
             <div
               ref={composerRef}
-              className={cn(
-                "space-y-2 rounded-2xl border border-border bg-card p-3 shadow-sm transition-colors focus-within:border-slate-300",
-                paste.isDraggingOver &&
-                  "bg-sky-50 outline-dashed outline-2 -outline-offset-2 outline-sky-300",
-              )}
-              onPaste={agentMode ? undefined : paste.onPaste}
-              onDragEnter={agentMode ? undefined : paste.onDragEnter}
-              onDragOver={agentMode ? undefined : paste.onDragOver}
-              onDragLeave={agentMode ? undefined : paste.onDragLeave}
-              onDrop={agentMode ? undefined : paste.onDrop}
+              className="space-y-2 rounded-2xl border border-border bg-card p-3 shadow-sm transition-colors focus-within:border-slate-300"
             >
-              {!agentMode && attachments.items.length > 0 ? (
-                <AttachmentChips
-                  items={attachments.items}
-                  onRemove={attachments.remove}
-                  onRetry={attachments.retry}
-                  onOpen={(item) => {
-                    if (!item.attachment || !isImageFile(item.file)) return
-                    setCropTarget({ key: item.key, attachment: item.attachment })
-                  }}
-                />
-              ) : null}
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={
-                  agentBusy
+                  busy
                     ? "Агент работает — дождитесь итога или подтвердите действие"
-                    : agentMode
-                      ? "Опишите задачу для агента"
-                      : "Спросите модель"
+                    : "Опишите задачу для агента"
                 }
                 className="max-h-48 min-h-12 resize-none border-0 bg-transparent p-1 text-base shadow-none focus-visible:ring-0 md:text-base"
                 autoFocus
@@ -603,108 +493,85 @@ export function AgentChat() {
                   }
                 }}
               />
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <SegmentedControl
-                    size="sm"
-                    ariaLabel="Режим"
-                    options={MODE_OPTIONS}
-                    value={mode}
-                    onChange={(next) => {
-                      setMode(next)
-                      store(MODE_STORAGE_KEY, next)
-                    }}
-                  />
-                  {!agentMode ? (
-                    <>
-                      <Select
-                        value={tier}
-                        onValueChange={(v) => {
-                          const next = v as AgentChatTier
-                          setTier(next)
-                          store(TIER_STORAGE_KEY, next)
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-[110px] bg-transparent" aria-label="Модель">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TIER_OPTIONS.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept={Array.from(ACCEPTED_ATTACHMENT_MIME).join(",")}
-                        className="hidden"
-                        onChange={(e) => {
-                          attachments.addFiles(Array.from(e.target.files ?? []))
-                          e.target.value = ""
-                        }}
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        type="button"
-                        className="size-8 text-muted-foreground"
-                        aria-label="Приложить файл"
-                        disabled={conv.isRunning}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Paperclip className="size-4" strokeWidth={2} />
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="hidden text-xs text-muted-foreground md:inline">
-                    Enter — отправить, Shift+Enter — новая строка
-                  </span>
-                  <Button
-                    size="icon"
-                    type="button"
-                    className="size-8"
-                    aria-label="Отправить"
-                    disabled={!canSend}
-                    onClick={send}
-                  >
-                    {busy ? (
-                      <Loader2 className="size-4 animate-spin" strokeWidth={2} />
-                    ) : (
-                      <Send className="size-4" strokeWidth={2} />
-                    )}
-                  </Button>
-                </div>
+              <div className="flex items-center justify-end gap-3">
+                <span className="hidden text-xs text-muted-foreground md:inline">
+                  Enter — отправить, Shift+Enter — новая строка
+                </span>
+                <Button
+                  size="icon"
+                  type="button"
+                  className="size-8"
+                  aria-label="Отправить"
+                  disabled={!canSend}
+                  onClick={send}
+                >
+                  {busy ? (
+                    <Loader2 className="size-4 animate-spin" strokeWidth={2} />
+                  ) : (
+                    <Send className="size-4" strokeWidth={2} />
+                  )}
+                </Button>
               </div>
             </div>
           </div>
         </div>
-
-        <JobDetailDrawer
-          job={openJob}
-          onOpenChange={(open) => {
-            if (!open) setOpenJob(null)
-          }}
-        />
-
-        {cropTarget ? (
-          <ImageCropper
-            attachment={cropTarget.attachment}
-            onOpenChange={(open) => {
-              if (!open) setCropTarget(null)
-            }}
-            onCropped={(attachment) => {
-              attachments.replace(cropTarget.key, attachment)
-              setCropTarget(null)
-            }}
-          />
-        ) : null}
       </div>
+
+      {wide && panelOpen ? (
+        <aside
+          aria-label="Ход работы"
+          className="flex w-88 shrink-0 flex-col border-l border-border bg-card"
+        >
+          {panel(() => setPanelOpen(false))}
+        </aside>
+      ) : null}
+
+      {!wide ? (
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <SheetContent className="max-w-[24rem]" aria-describedby={undefined}>
+            <SheetTitle className="sr-only">Ход работы</SheetTitle>
+            {panel()}
+          </SheetContent>
+        </Sheet>
+      ) : null}
+
+      {sessionsOpen ? (
+        <div className="fixed inset-0 z-40 flex md:hidden">
+          <div className="flex h-full w-64 flex-col bg-card p-2 shadow-xl">
+            <div className="px-2 pb-2 pt-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Диалоги
+            </div>
+            <AgentSessionList
+              className="min-h-0 flex-1 overflow-y-auto"
+              sessions={sessions}
+              activeId={sessions.activeId}
+              newActive={sessions.activeId == null}
+              onSelect={(id) => {
+                sessions.setActiveId(id)
+                setSessionsOpen(false)
+              }}
+              onCreate={() => {
+                sessions.setActiveId(null)
+                setSessionsOpen(false)
+              }}
+              onDelete={(id) => void sessions.remove(id)}
+            />
+          </div>
+          <button
+            type="button"
+            aria-label="Закрыть список диалогов"
+            className="flex-1 bg-black/30"
+            onClick={() => setSessionsOpen(false)}
+          />
+        </div>
+      ) : null}
+
+      <JobDetailDrawer
+        job={openJob}
+        onOpenChange={(open) => {
+          if (!open) setOpenJob(null)
+        }}
+      />
     </div>
   )
 }
