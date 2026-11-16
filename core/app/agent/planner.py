@@ -47,11 +47,28 @@ def clamp_plan_steps(spec: PlanSpec, limits: RunLimits) -> list[PlanStep]:
     return list(unique.values())[: limits.plan_max_steps]
 
 
+def judge_remark(state: AgentState) -> str | None:
+    """Замечание судьи итога (A-5) для планировщика: почему итог не принят."""
+    verdict = state.get("judge_verdict") or {}
+    if verdict.get("level") != "final" or verdict.get("verdict") != "fail":
+        return None
+    lines = [str(verdict.get("reason") or "итог не принят")]
+    failures = verdict.get("quote_failures") or []
+    if failures:
+        lines.append("цитаты вывода, которых нет в материалах: " + "; ".join(map(str, failures)))
+    return "\n".join(lines)
+
+
 def planner_node(model: BaseChatModel, limits: RunLimits) -> Any:
     """Узел `plan`: structured-запрос плана; план и понимание цели — в состояние."""
 
     async def _planner(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         parts = [load_prompt("plan"), f"## Цель\n{state['goal']}"]
+        remark = judge_remark(state)
+        if remark:
+            # Судья отправил итог на доработку (A-5): план должен закрыть пробелы
+            # и закончиться шагом-выводом с опорой-цитатой.
+            parts.append("## Замечание судьи (итог не принят, собери план доработки)\n" + remark)
         observations = state.get("observations") or []
         if observations:
             parts.append(
@@ -94,4 +111,10 @@ def planner_node(model: BaseChatModel, limits: RunLimits) -> Any:
     return _planner
 
 
-__all__ = ["PlanSpec", "PlanStepSpec", "clamp_plan_steps", "planner_node"]
+__all__ = [
+    "PlanSpec",
+    "PlanStepSpec",
+    "clamp_plan_steps",
+    "judge_remark",
+    "planner_node",
+]

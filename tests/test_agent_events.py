@@ -251,9 +251,26 @@ async def test_node_timings_present_for_every_node():
     collector = EventCollector()
     await run_agent_goal(GOAL, deps=_deps(collector))
     timings = {e.node: e.duration_ms for e in collector.of_type("node_timing")}
-    assert {"plan", "step", "check", "replan"} <= set(timings), f"таймеры: {sorted(timings)}"
+    assert {"plan", "step", "check", "replan", "judge"} <= set(timings), (
+        f"таймеры: {sorted(timings)}"
+    )
     step_time = timings.get("step")
     assert step_time is not None and step_time >= 0
+
+
+async def test_judge_verdict_event_present():
+    """A-5: судья отдаёт вердикт событием — без судей честное «не проверяется»."""
+    collector = EventCollector()
+    state = await run_agent_goal(GOAL, deps=_deps(collector))
+    assert state["stop_reason"] == "answered"
+
+    verdicts = collector.of_type("judge_verdict")
+    assert verdicts, "вердикты судьи идут событиями"
+    finals = [e for e in verdicts if e.payload.get("level") == "final"]
+    assert finals and finals[-1].payload["verdict"] == "unverified"
+    assert finals[-1].node == "judge"
+    steps = [e for e in verdicts if e.payload.get("level") == "step"]
+    assert steps and all(e.payload["step_id"] for e in steps), "самопроверка шага с step_id"
 
 
 async def test_checkpointer_pass_keeps_observer_events():

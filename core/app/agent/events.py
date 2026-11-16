@@ -2,7 +2,8 @@
 
 Событие — то, что уходит в Postgres (`agent_events`) и в SSE-поток запуска: экран
 строит ход работы по событиям без опроса, а таймеры узлов (`node_timing`) дают
-метрику p90 шага (OQ-29, порог 60 с). `judge_verdict` резервируется за судьёй (A-5).
+метрику p90 шага (OQ-29, порог 60 с). `judge_verdict` (A-5) — вердикт судьи:
+самопроверка шага (level=step) и проверка итога (level=final), `{verdict, reason}`.
 
 Наблюдатель — синхронный колбэк `emit`: узлы графа вызывают его из одного event loop,
 а менеджер запуска (`runs.py`) перекладывает события в хранилище и подписчикам SSE.
@@ -21,13 +22,14 @@ EventType = Literal[
     "observation",
     "plan_changed",
     "step_checked",
+    "judge_verdict",
     "needs_confirmation",
     "confirmation_resolved",
     "node_timing",
     "done",
     "failed",
 ]
-"""Типы событий запуска. `judge_verdict` придёт с A-5 и дополнит список."""
+"""Типы событий запуска."""
 
 
 @dataclass(frozen=True, slots=True)

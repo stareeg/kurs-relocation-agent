@@ -26,9 +26,11 @@ StopReason = Literal[
     "model_budget",
     "model_error",
     "model_schema",
+    "judge_failed",
 ]
 """Почему запуск остановился. `answered` — модель ответила по цели; остальное — честный
-частичный результат (риски PLAN 4.1): предел шагов/перестроек/бюджета или сбой модели."""
+частичный результат (риски PLAN 4.1): предел шагов/перестроек/бюджета, сбой модели или
+итог, не принятый судьёй (A-5, доработки исчерпаны)."""
 
 
 class PlanStep(BaseModel):
@@ -78,6 +80,11 @@ class AgentState(TypedDict):
     # Решение последней перестройки (маршрутное поле, читает ребро после `replan`)
     replan_action: Literal["continue", "rebuild", "finish"] | None
 
+    # Самопроверка (A-5): вердикты судьи как данные (verdict/reason, level)
+    step_verdict: dict[str, Any] | None  # проверка шага (уровень 1, узел `check`)
+    judge_verdict: dict[str, Any] | None  # проверка итога (уровень 2, узел `judge`)
+    reworks_used: int  # сколько раз судья отправлял итог на доработку
+
     # Наблюдения и собранное
     observations: list[Observation]
     vacancies: list[dict[str, Any]]  # найденные вакансии (из результатов инструментов)
@@ -111,6 +118,7 @@ class RunLimits:
     max_tokens: int = 200_000  # суммарных токенов вход+выход на запуск
     max_failure_streak: int = 2  # подряд идущих неудачных шагов до передачи перестройке
     max_subagent_calls: int = 2  # вызовов `task` (субагентов) на шаг (OQ-28)
+    max_judge_reworks: int = 2  # доработок итога по вердикту судьи до честного финала (A-5)
     step_max_turns: int = 4  # ходов модели внутри одного шага (маленький ReAct, OQ-6)
     plan_min_steps: int = 2
     plan_max_steps: int = 6
@@ -237,4 +245,5 @@ STOP_REASONS_TEXT: dict[str, str] = {
     "model_error": "модель не ответила",
     "model_schema": "модель не смогла отдать ответ в нужном формате",
     "plan_exhausted": "план кончился раньше, чем цель закрылась",
+    "judge_failed": "итог не принят судьёй, доработки исчерпаны",
 }

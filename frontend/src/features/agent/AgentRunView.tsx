@@ -5,6 +5,7 @@ import {
   CircleDashed,
   Clock,
   Loader2,
+  Scale,
   ShieldQuestion,
   Wrench,
   X,
@@ -26,6 +27,7 @@ const STOP_REASON_TEXT: Record<string, string> = {
   model_budget: "исчерпан бюджет модели",
   model_error: "сбой модели",
   model_schema: "сбой схемы модели",
+  judge_failed: "итог не принят судьёй",
 }
 
 const STATUS_LABEL: Record<AgentRunStatus, string> = {
@@ -110,6 +112,18 @@ function eventLine(ev: AgentEvent): string | null {
     }
     case "step_checked":
       return p.done === true ? "Шаг закрыт" : "Шаг не закрыт"
+    case "judge_verdict": {
+      const verdict = String(p.verdict ?? "")
+      const reason = typeof p.reason === "string" && p.reason ? `: ${p.reason}` : ""
+      if (p.level === "step") {
+        if (verdict === "pass") return "Самопроверка шага: результат отвечает шагу"
+        if (verdict === "fail") return `Самопроверка шага: шаг не закрыт${reason}`
+        return "Самопроверка шага: не проверяется"
+      }
+      if (verdict === "pass") return "Судья: итог подтверждён"
+      if (verdict === "fail") return `Судья: итог не принят${reason}`
+      return "Судья: итог не проверяется"
+    }
     case "needs_confirmation":
       return "Действие ждёт подтверждения"
     case "confirmation_resolved":
@@ -138,6 +152,12 @@ function eventIcon(ev: AgentEvent) {
       ) : (
         <X className={cn(cls, "text-rose-500")} />
       )
+    case "judge_verdict": {
+      const verdict = String(ev.payload.verdict ?? "")
+      if (verdict === "pass") return <Scale className={cn(cls, "text-emerald-500")} />
+      if (verdict === "fail") return <Scale className={cn(cls, "text-rose-500")} />
+      return <Scale className={cn(cls, "text-slate-400")} />
+    }
     case "failed":
       return <AlertTriangle className={cn(cls, "text-rose-500")} />
     default:

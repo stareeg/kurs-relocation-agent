@@ -19,6 +19,7 @@ from core.app.agent.graph import (
     build_agent_graph,
     derive_stop_reason,
     route_after_check,
+    route_after_judge,
     route_after_plan,
     route_after_replan,
     route_after_step,
@@ -86,6 +87,9 @@ def _state_with(plan: list[PlanStep], **overrides: Any) -> AgentState:
         "replan_reason": None,
         "current_step_id": None,
         "replan_action": None,
+        "step_verdict": None,
+        "judge_verdict": None,
+        "reworks_used": 0,
         "observations": [],
         "vacancies": [],
         "routes": [],
@@ -167,18 +171,24 @@ async def test_executor_sees_only_domain_tools():
 
 
 async def test_check_marks_done_and_failure_streak():
-    """Чек-эвристика: ошибка инструмента держит шаг todo и растит счётчик неудач."""
+    """Чек: без судьи — прежняя эвристика, ошибка держит шаг todo и растит неудачи."""
     from core.app.agent.graph import check_node
 
     plan = [PlanStep(id="s1", title="шаг", done_criteria="критерий")]
-    ok = check_node()(_state_with(plan, observations=[Observation(step_id="s1", index=1, summaries=["ок"])]))
+    ok = await check_node()(
+        _state_with(plan, observations=[Observation(step_id="s1", index=1, summaries=["ок"])]),
+        None,
+    )
     assert ok["plan"][0].status == "done"
     assert ok["failure_streak"] == 0
+    assert ok["step_verdict"]["verdict"] == "unverified", "без судьи — честное «не проверяется»"
 
-    failed = check_node()(
-        _state_with(plan, observations=[Observation(step_id="s1", index=1, error="таймаут")])
+    failed = await check_node()(
+        _state_with(plan, observations=[Observation(step_id="s1", index=1, error="таймаут")]),
+        None,
     )
     assert failed["failure_streak"] == 1
+    assert "plan" not in failed, "ошибка не закрывает шаг"
 
 
 def test_routes_step_check_replan():
@@ -211,15 +221,32 @@ def test_routes_step_check_replan():
     state_stuck = {**state_failed, "failure_streak": limits.max_failure_streak + 1}
     assert route_after_check(state_stuck, limits) == "replan", "застряли — на перестройку"
 
+    state_judge_fail = {
+        **state_ok,
+        "step_verdict": {"level": "step", "verdict": "fail", "reason": "не отвечает шагу"},
+    }
+    assert route_after_check(state_judge_fail, limits) == "step", "судья не принял шаг — повтор"
+
     state_budget = _state_with(plan, steps_taken=1, model_calls=limits.max_model_calls)
     assert route_after_check(state_budget, limits) == "finalize", "бюджет — честный финал"
 
     state_rebuild = _state_with(plan, replan_action="rebuild", replans_used=1)
     assert route_after_replan(state_rebuild, limits) == "plan"
     state_finish = _state_with(plan, replan_action="finish")
-    assert route_after_replan(state_finish, limits) == "finalize"
+    assert route_after_replan(state_finish, limits) == "judge", "итог сначала судит судья (A-5)"
     state_continue = _state_with(plan, replan_action="continue")
     assert route_after_replan(state_continue, limits) == "step"
+
+    judge_pass = {**state_finish, "judge_verdict": {"level": "final", "verdict": "pass", "reason": "цель покрыта"}}
+    assert route_after_judge(judge_pass, limits) == "finalize"
+    judge_fail = {**state_finish, "judge_verdict": {"level": "final", "verdict": "fail", "reason": "нет цитат"}}
+    assert route_after_judge(judge_fail, limits) == "plan", "провал итога — доработка"
+    judge_stuck = {
+        **judge_fail,
+        "stop_reason": "judge_failed",
+        "reworks_used": limits.max_judge_reworks,
+    }
+    assert route_after_judge(judge_stuck, limits) == "finalize", "доработки исчерпаны — честный финал"
 
 
 # ------------------------------------------------------------------- пределы

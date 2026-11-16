@@ -1,16 +1,19 @@
-"""Сборка графа агента: план → шаг → подтверждение → проверка → перестройка → финал (A-1/A-3).
+"""Сборка графа агента: план → шаг → подтверждение → проверка → перестройка → судья → финал.
 
 Узлы как на схеме в PLAN 3: планировщик собирает план, исполнитель deepagents выполняет
 шаг, узел `confirm` ставит граф на паузу, когда модель запросила действие (`queue_application`),
 и ждёт «да» человека через `interrupt()` — после рестарта API запуск продолжается с того же
-чекпойнта, «да» выполняет действие. Проверка шага (в A-1 — код-эвристика, модельная
-самопроверка придёт в A-5), перестройка решает continue/rebuild/finish, финал отдаёт ответ
-или честный частичный результат. Пределы (`RunLimits`) проверяются рёбрами между фазами;
-выход за предел — остановка с частичным итогом, а не ошибка.
+чекпойнта, «да» выполняет действие. Проверка шага (A-5): код-эвристика + модель-судья
+«отвечает ли результат шагу»; перестройка решает continue/rebuild/finish; узел `judge`
+перед финалом проверяет итог (цель покрыта, у выводов есть опора-цитата), провал отправляет
+агента на доработку через планировщик (петля ограничена `RunLimits.max_judge_reworks`).
+Финал отдаёт ответ или честный частичный результат. Пределы (`RunLimits`) проверяются
+рёбрами между фазами; выход за предел — остановка с частичным итогом, а не ошибка.
 
 Наблюдатель (`AgentDeps.observer`, A-3) получает события запуска: узловые таймеры
 (`node_timing`, метрика p90 шага — OQ-29) и содержательные события
-(plan_created/step_started/observation/…). Без наблюдателя граф работает как раньше.
+(plan_created/step_started/observation/judge_verdict/…). Без наблюдателя граф работает
+как раньше.
 
 Запуск: `run_agent_goal(goal)` — считает бюджет через колбэк (`RunBudget`), поддерживает
 чекпойнтер, возвращает итоговое состояние; фоновые запуски с паузой ведёт `runs.py`.
@@ -19,6 +22,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field, replace
@@ -32,10 +36,11 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import interrupt
 
-from core.app.agent.budget import RunBudget, put_budget
+from core.app.agent.budget import RunBudget, budget_from, put_budget
 from core.app.agent.contracts import Tool, ToolCall, ToolContext
 from core.app.agent.events import AgentEvent, RunObserver, node_event
 from core.app.agent.executor import step_node
+from core.app.agent.judge import JudgeSpec, JudgeVerdict, judge_node, judge_step_call
 from core.app.agent.planner import planner_node
 from core.app.agent.replanner import replan_node
 from core.app.agent.state import (
@@ -51,6 +56,9 @@ from core.app.agent.state import (
 )
 from core.app.agent.subagents import COUNTRY_RESEARCHER, VACANCY_ASSESSOR
 from core.app.agent.toolkit import execute_tool
+from core.platform.llm.openrouter_chat import _StructuredOutputRunnable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -59,9 +67,11 @@ class AgentDeps:
 
     Тиры (решение 15.11, OQ-13): планировщик и перестройка — advanced (high effort),
     исполнитель шага и оба субагента — basic (low effort, скорость; OQ-28). Судья
-    (A-5) добавит свой вызов. `observer` (A-3) — синхронный получатель событий запуска
-    (узловые таймеры, шаги). `subagent_models` (A-8) — модели субагентов по ролям;
-    пусто — шаг работает без `task` (старое поведение тестов).
+    (A-5, OQ-21) — тир `reserve`, модель другой семьи: `judge_step` проверяет шаг,
+    `judge_final` — итог; `None` — проверка честно «не проверяется» (старое поведение
+    тестов без конфига reserve). `observer` (A-3) — синхронный получатель событий
+    запуска. `subagent_models` (A-8) — модели субагентов по ролям; пусто — шаг
+    работает без `task`.
     """
 
     planner: BaseChatModel
@@ -72,6 +82,8 @@ class AgentDeps:
     tool_context: ToolContext = field(default_factory=ToolContext)
     observer: RunObserver | None = None
     subagent_models: dict[str, BaseChatModel] = field(default_factory=dict)
+    judge_step: BaseChatModel | None = None
+    judge_final: BaseChatModel | None = None
 
 
 def default_deps(account_id: int = 1) -> AgentDeps:
@@ -79,9 +91,12 @@ def default_deps(account_id: int = 1) -> AgentDeps:
 
     `account_id` — аккаунт запроса; менеджер запусков (`runs.py`) передаёт аккаунт
     владельца запуска. БД инструментов не передаётся: домены сами открывают пул.
-    Субагенты (A-8, OQ-28) — две роли на basic/low.
+    Субагенты (A-8, OQ-28) — две роли на basic/low. Судья (A-5) — тир `reserve`;
+    без конфига reserve судья недоступен — запуски идут с честным «не проверяется».
     """
     from core.app.agent.llm import (
+        AGENT_JUDGE_FINAL,
+        AGENT_JUDGE_STEP,
         AGENT_PLAN,
         AGENT_REPLAN,
         AGENT_STEP,
@@ -94,6 +109,12 @@ def default_deps(account_id: int = 1) -> AgentDeps:
 
     ensure_agent_features_registered()
     ensure_tools_registered()
+    try:
+        judge_step = chat_model_for(AGENT_JUDGE_STEP)
+        judge_final = chat_model_for(AGENT_JUDGE_FINAL)
+    except Exception as exc:  # noqa: BLE001 — нет конфига reserve: судья честно недоступен
+        logger.warning("судья A-5 недоступен (тир reserve не сконфигурирован): %s", exc)
+        judge_step = judge_final = None
     return AgentDeps(
         planner=chat_model_for(AGENT_PLAN, temperature=0.2),
         executor=chat_model_for(AGENT_STEP, temperature=0.2),
@@ -104,37 +125,117 @@ def default_deps(account_id: int = 1) -> AgentDeps:
             COUNTRY_RESEARCHER: chat_model_for(AGENT_SUB_COUNTRY, temperature=0.2),
             VACANCY_ASSESSOR: chat_model_for(AGENT_SUB_VACANCY, temperature=0.2),
         },
+        judge_step=judge_step,
+        judge_final=judge_final,
     )
 
 
-def check_node() -> Any:
-    """Узел `check` (A-1 — код-эвристика; модельная самопроверка придёт в A-5).
+def check_node(judge: BaseChatModel | None = None, observer: RunObserver | None = None) -> Any:
+    """Узел `check` (A-1 эвристика + A-5 модельная самопроверка шага, уровень 1).
 
-    Наблюдение без ошибки — шаг закрыт, доказательство уходит в план; с ошибкой — шаг
-    остаётся `todo`, растёт счётчик неудач. После `max_failure_streak` неудач подряд
-    ребро уводит на перестройку.
+    Наблюдение с ошибкой — провал без вызова модели (дёшево и детерминированно), шаг
+    остаётся `todo`, растёт счётчик неудач. Наблюдение без ошибки проверяет модель-судья:
+    отвечает ли результат шагу плана; `pass` — шаг закрыт с доказательством в плане,
+    `fail` — шаг остаётся `todo` (ребро ведёт на повтор шага), `unverified` — судья
+    недоступен: прежнее поведение (шаг закрыт), вердикт идёт как данные. После
+    `max_failure_streak` неудач подряд ребро уводит на перестройку.
     """
 
-    def _check(state: AgentState) -> dict[str, Any]:
+    async def _check(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         observations = state.get("observations") or []
         if not observations:
             return {}
         last = observations[-1]
         plan: list[PlanStep] = list(state.get("plan") or [])
-        if last.error is None:
-            evidence = last.answer or "; ".join(last.summaries) or ""
-            plan = [
-                (
-                    s.model_copy(update={"status": "done", "result": evidence})
-                    if s.id == last.step_id
-                    else s
+        budget = budget_from(config)
+        if last.error is not None:
+            verdict = JudgeVerdict(
+                level="step", verdict="fail", reason=f"ошибка инструмента: {last.error}"
+            )
+            _emit_judge(observer, state, verdict, last)
+            return {
+                "failure_streak": state.get("failure_streak", 0) + 1,
+                "step_verdict": verdict.as_dict(),
+                "model_calls": budget.calls,
+                "tokens_in": budget.tokens_in,
+                "tokens_out": budget.tokens_out,
+            }
+        step = next((s for s in plan if s.id == last.step_id), None)
+        if step is not None and judge is not None and not budget.over_budget():
+            try:
+                spec = await _StructuredOutputRunnable(judge, JudgeSpec, max_retries=1).ainvoke(
+                    judge_step_call(step, last, state["goal"]), config=config
                 )
-                for s in plan
-            ]
-            return {"plan": plan, "failure_streak": 0}
-        return {"failure_streak": state.get("failure_streak", 0) + 1}
+                verdict = JudgeVerdict(level="step", verdict=spec.verdict, reason=spec.reason)
+            except Exception as exc:  # noqa: BLE001 — сбой судьи не роняет шаг
+                verdict = JudgeVerdict(
+                    level="step", verdict="unverified", reason=f"судья недоступен: {exc}"
+                )
+        elif step is None:
+            verdict = JudgeVerdict(
+                level="step", verdict="unverified", reason="шаг не найден в плане"
+            )
+        elif judge is None:
+            verdict = JudgeVerdict(
+                level="step", verdict="unverified", reason="судья не сконфигурирован"
+            )
+        else:
+            verdict = JudgeVerdict(
+                level="step", verdict="unverified", reason="бюджет запуска исчерпан"
+            )
+        _emit_judge(observer, state, verdict, last)
+        if verdict.verdict == "fail":
+            return {
+                "failure_streak": state.get("failure_streak", 0) + 1,
+                "step_verdict": verdict.as_dict(),
+                "model_calls": budget.calls,
+                "tokens_in": budget.tokens_in,
+                "tokens_out": budget.tokens_out,
+            }
+        evidence = last.answer or "; ".join(last.summaries) or ""
+        plan = [
+            (
+                s.model_copy(update={"status": "done", "result": evidence})
+                if s.id == last.step_id
+                else s
+            )
+            for s in plan
+        ]
+        return {
+            "plan": plan,
+            "failure_streak": 0,
+            "step_verdict": verdict.as_dict(),
+            "model_calls": budget.calls,
+            "tokens_in": budget.tokens_in,
+            "tokens_out": budget.tokens_out,
+        }
 
     return _check
+
+
+def _emit_judge(
+    observer: RunObserver | None,
+    state: AgentState,
+    verdict: JudgeVerdict,
+    observation: Observation,
+) -> None:
+    """Событие `judge_verdict` (A-5): вердикт и причина — в поток запуска."""
+    if observer is None:
+        return
+    observer.emit(
+        AgentEvent(
+            type="judge_verdict",
+            payload={
+                "level": verdict.level,
+                "verdict": verdict.verdict,
+                "reason": verdict.reason,
+                "quote_failures": list(verdict.quote_failures),
+                "step_id": observation.step_id,
+                "index": observation.index,
+            },
+            node="check" if verdict.level == "step" else "judge",
+        )
+    )
 
 
 def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pausable: bool) -> Any:
@@ -271,6 +372,11 @@ def _compose_answer(state: AgentState, stop: str) -> str:
         return "\n\n".join(parts)
     plan = state.get("plan") or []
     lines = [f"Не удалось закончить цель: {STOP_REASONS_TEXT.get(stop, stop)}."]
+    if stop == "judge_failed":
+        # Причина вердикта — данные судьи (A-5): почему итог не принят.
+        reason = (state.get("judge_verdict") or {}).get("reason")
+        if reason:
+            lines.append(f"Причина судьи: {reason}")
     done = done_steps_summary(plan, state.get("observations") or [])
     if done != "(шаги не закрыты)":
         lines.append(f"Что удалось:\n{done}")
@@ -304,7 +410,11 @@ def route_after_step(state: AgentState) -> Literal["confirm", "finalize"]:
 def route_after_check(
     state: AgentState, limits: RunLimits
 ) -> Literal["step", "replan", "finalize"]:
-    """После проверки: пределы — честный финал; неудачный шаг повторяется, потом перестройка."""
+    """После проверки: пределы — честный финал; неудачный шаг повторяется, потом перестройка.
+
+    Неудачей считается и провал модельной самопроверки шага (A-5): судья сказал
+    «результат не отвечает шагу» — шаг повторяется, счётчик неудач уже посчитан узлом.
+    """
     if state.get("stop_reason") is not None:
         return "finalize"
     if over_budget(state, limits) or state.get("steps_taken", 0) >= limits.max_steps:
@@ -313,20 +423,37 @@ def route_after_check(
         return "replan"
     observations = state.get("observations") or []
     if observations and observations[-1].error is None:
+        if (state.get("step_verdict") or {}).get("verdict") == "fail":
+            return "step"  # судья не принял результат шага — повтор шага
         return "replan"  # шаг закрыт — перестройка решает, что дальше
     return "step"  # неудача: повтор того же шага
 
 
-def route_after_replan(state: AgentState, limits: RunLimits) -> Literal["step", "plan", "finalize"]:
-    """После перестройки: продолжаем шаги, пересобираем план или заканчиваем честно."""
+def route_after_replan(
+    state: AgentState, limits: RunLimits
+) -> Literal["step", "plan", "judge", "finalize"]:
+    """После перестройки: продолжаем шаги, пересобираем план, судим итог или заканчиваем."""
     if state.get("stop_reason") is not None:
         return "finalize"
     action = state.get("replan_action")
     if action == "finish":
-        return "finalize"
+        return "judge"  # итог проверяет судья (A-5), финал — после его вердикта
     if action == "rebuild":
         return "plan" if state.get("replans_used", 0) < limits.max_replans else "finalize"
     return "step"
+
+
+def route_after_judge(state: AgentState, limits: RunLimits) -> Literal["plan", "finalize"]:
+    """После судьи итога (A-5): провал — на доработку через планировщик, исчерпание — финал.
+
+    Предел доработок считает узел `judge`: когда `reworks_used` дошёл до
+    `max_judge_reworks`, он сам ставит `stop_reason="judge_failed"` — тогда финал.
+    """
+    if state.get("stop_reason") is not None:
+        return "finalize"
+    if (state.get("judge_verdict") or {}).get("verdict") == "fail":
+        return "plan"
+    return "finalize"
 
 
 def _after_node_event(
@@ -478,8 +605,14 @@ def build_agent_graph(
     graph.add_node(
         "confirm", confirm_node(deps.tool_context, observer, pausable=checkpointer is not None)
     )
-    graph.add_node("check", _observed_node("check", check_node(), observer))
+    graph.add_node(
+        "check", _observed_node("check", check_node(deps.judge_step, observer), observer)
+    )
     graph.add_node("replan", _observed_node("replan", replan_node(deps.replanner), observer))
+    graph.add_node(
+        "judge",
+        _observed_node("judge", judge_node(deps.judge_final, limits, observer), observer),
+    )
     graph.add_node("finalize", finalize_node(limits))
     graph.add_edge(START, "plan")
     graph.add_conditional_edges(
@@ -501,7 +634,12 @@ def build_agent_graph(
     graph.add_conditional_edges(
         "replan",
         lambda s: route_after_replan(s, limits),
-        {"plan": "plan", "step": "step", "finalize": "finalize"},
+        {"plan": "plan", "step": "step", "judge": "judge", "finalize": "finalize"},
+    )
+    graph.add_conditional_edges(
+        "judge",
+        lambda s: route_after_judge(s, limits),
+        {"plan": "plan", "finalize": "finalize"},
     )
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer)
@@ -542,6 +680,7 @@ __all__ = [
     "finalize_node",
     "over_budget",
     "route_after_check",
+    "route_after_judge",
     "route_after_plan",
     "route_after_replan",
     "route_after_step",
