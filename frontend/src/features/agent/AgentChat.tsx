@@ -10,7 +10,7 @@
  * содержимом ловит и новые сообщения, и токены стрима, и события запуска.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, Copy, Loader2, Paperclip, Send } from "lucide-react"
+import { ArrowDown, Copy, Loader2, Menu, Paperclip, Send } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { linkify } from "@/components/chat/linkify"
@@ -45,7 +45,10 @@ import {
 } from "./use-agent-conversation"
 import { useAgentSessions } from "./use-agent-sessions"
 import { useAgentRuns, type RunView } from "./use-agent-runs"
-import { AgentRunView } from "./AgentRunView"
+import { AgentRunView, type VacancyRef } from "./AgentRunView"
+import { useJobs } from "@/features/jobs/use-jobs"
+import { JobDetailDrawer } from "@/features/jobs/JobDetailDrawer"
+import type { Job } from "@/api/jobs"
 import { AgentChatSessions } from "./AgentChatSessions"
 import { appendAgentChatMessage, createAgentChat } from "@/api/agent"
 
@@ -190,6 +193,26 @@ export function AgentChat() {
     onUserPersisted,
   )
   const runs = useAgentRuns(sessions.activeId)
+  const jobsQuery = useJobs()
+  const jobs = jobsQuery.data
+  const [openJob, setOpenJob] = useState<Job | null>(null)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+
+  // Вакансии аккаунта по id: название вместо id в карточке подтверждения и чипы
+  // «Вакансии в запуске», клик открывает дровер вакансии прямо поверх чата.
+  const vacancies = useMemo(() => {
+    const map = new Map<string, VacancyRef>()
+    for (const job of jobs ?? []) {
+      if (job?.vacancy_id && job.title) map.set(job.vacancy_id, { title: job.title, company: job.company ?? null })
+    }
+    return map
+  }, [jobs])
+
+  function openVacancy(vacancyId: string) {
+    const job = (jobs ?? []).find((j) => j?.vacancy_id === vacancyId)
+    if (job) setOpenJob(job)
+    else toast.error("Вакансии нет в базе аккаунта")
+  }
   const [text, setText] = useState("")
   const [tier, setTier] = useState<AgentChatTier>(loadTier)
   const [mode, setMode] = useState<ComposerMode>(loadMode)
@@ -322,6 +345,12 @@ export function AgentChat() {
   }
 
   /** Режим «Агент»: цель → фоновый запуск (бэкенд сам пишет события в БД и SSE). */
+  function retryRun(goal: string) {
+    if (conv.isRunning || runs.hasActive) return
+    pinned.current = true
+    void sendAgentRun(goal)
+  }
+
   async function sendAgentRun(goal: string) {
     const sid = sessions.activeId ?? (await sessions.create())?.id ?? null
     if (sid == null) {
@@ -350,7 +379,46 @@ export function AgentChat() {
         onDelete={(id) => void sessions.remove(id)}
       />
 
+      {sessionsOpen ? (
+        <div className="fixed inset-0 z-40 flex md:hidden">
+          <AgentChatSessions
+            className="flex h-full shadow-xl"
+            sessions={sessions}
+            activeId={sessions.activeId}
+            onSelect={(id) => {
+              sessions.setActiveId(id)
+              setSessionsOpen(false)
+            }}
+            onCreate={() => {
+              sessions.setActiveId(null)
+              setSessionsOpen(false)
+            }}
+            onDelete={(id) => void sessions.remove(id)}
+          />
+          <button
+            type="button"
+            aria-label="Закрыть список диалогов"
+            className="flex-1 bg-black/30"
+            onClick={() => setSessionsOpen(false)}
+          />
+        </div>
+      ) : null}
+
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2 md:hidden">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5"
+            onClick={() => setSessionsOpen(true)}
+          >
+            <Menu className="size-4" strokeWidth={2} />
+            Диалоги
+          </Button>
+          <span className="min-w-0 truncate text-sm text-muted-foreground">
+            {sessions.sessions.find((x) => x.id === sessions.activeId)?.title ?? "Новый диалог"}
+          </span>
+        </div>
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
           <div ref={contentRef} className="mx-auto w-full max-w-5xl px-6 py-6">
             {hasMessages ? (
@@ -377,6 +445,10 @@ export function AgentChat() {
                       key={`run-${item.view.run.id}`}
                       view={item.view}
                       showGoal={!userTexts.has(item.view.run.goal.trim())}
+                      vacancies={vacancies}
+                      onOpenVacancy={openVacancy}
+                      onRetry={retryRun}
+                      retryDisabled={conv.isRunning || runs.hasActive}
                       onApprove={(runId, approved) => {
                         pinned.current = true
                         void runs.approve(runId, approved).catch(() =>
@@ -576,6 +648,13 @@ export function AgentChat() {
             </div>
           </div>
         </div>
+
+        <JobDetailDrawer
+          job={openJob}
+          onOpenChange={(open) => {
+            if (!open) setOpenJob(null)
+          }}
+        />
 
         {cropTarget ? (
           <ImageCropper

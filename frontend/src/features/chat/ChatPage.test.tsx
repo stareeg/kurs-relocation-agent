@@ -55,7 +55,8 @@ describe("ChatPage — главный экран «Агент»", () => {
     expect(screen.getByRole("heading", { name: "Агент по валютной удалёнке" })).toBeTruthy()
     // Режим «Агент» включён по умолчанию; переключатель «Агент / Чат» рядом с композером.
     expect(screen.getByPlaceholderText("Опишите задачу для агента")).toBeTruthy()
-    expect(await screen.findByText("Диалоги")).toBeTruthy()
+    // Список диалогов слева и кнопка «Диалоги» для узкого экрана.
+    expect((await screen.findAllByText("Диалоги")).length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Агент" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "Чат" })).toBeTruthy()
     // Примеры целей: клик подставляет цель в композер.
@@ -116,6 +117,6 @@ describe("ChatPage — главный экран «Агент»", () => {
     // Цепочка миграции — несколько серверных ходов под нагрузкой CI: даём больше секунды.
     expect(await screen.findByText("Привет", {}, { timeout: 15_000 })).toBeTruthy()
     expect(screen.getByText("Здравствуй")).toBeTruthy()
-    expect(screen.getByText("Диалог из этого браузера")).toBeTruthy()
+    expect(screen.getAllByText("Диалог из этого браузера").length).toBeGreaterThan(0)
   })
 })

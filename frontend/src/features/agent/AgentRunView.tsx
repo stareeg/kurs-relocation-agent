@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { AlertTriangle, Check, ChevronRight, Loader2, X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { AlertTriangle, Check, ChevronRight, Loader2, RotateCcw, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MarkdownView } from "@/components/markdown-view"
 import { cn } from "@/lib/utils"
@@ -101,6 +101,30 @@ type LogRow = {
   kind: "step" | "tool" | "tool-error" | "plan" | "check" | "judge-ok" | "judge-fail" | "info"
   title: string
   detail?: string
+  stepId?: string | null
+}
+
+/** Вакансия из базы аккаунта: показываем название вместо id и открываем карточку. */
+export type VacancyRef = { title: string; company: string | null }
+
+function vacancyName(v: VacancyRef): string {
+  return v.company ? `${v.title} · ${v.company}` : v.title
+}
+
+function fmtClock(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`
+}
+
+/** Секундомер живого запуска: тикает раз в секунду, пока запуск не завершён. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [active])
+  return now
 }
 
 function toLogRow(ev: AgentEvent): LogRow | null {
@@ -243,9 +267,27 @@ function StepMarker({ state, n }: { state: "done" | "current" | "dropped" | "tod
   )
 }
 
-function Plan({ plan, currentId, live }: { plan: RunPlanItem[]; currentId: string | null; live: boolean }) {
+function Plan({
+  plan,
+  currentId,
+  live,
+  rowsByStep,
+}: {
+  plan: RunPlanItem[]
+  currentId: string | null
+  live: boolean
+  rowsByStep: Map<string, LogRow[]>
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const toggle = (id: string) =>
+    setExpanded((cur) => {
+      const next = new Set(cur)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   return (
-    <ol className="space-y-1.5">
+    <ol className="space-y-1">
       {plan.map((step, i) => {
         const state =
           step.status === "done"
@@ -255,12 +297,16 @@ function Plan({ plan, currentId, live }: { plan: RunPlanItem[]; currentId: strin
               : live && step.id === currentId
                 ? "current"
                 : "todo"
-        return (
-          <li key={step.id} className="flex items-start gap-2.5 text-sm">
+        const rows = rowsByStep.get(step.id) ?? []
+        const calls = rows.filter((r) => r.kind === "tool" || r.kind === "tool-error").length
+        const hasError = rows.some((r) => r.kind === "tool-error" || r.kind === "judge-fail")
+        const open = expanded.has(step.id)
+        const label = (
+          <>
             <StepMarker state={state} n={i + 1} />
             <span
               className={cn(
-                "pt-px",
+                "min-w-0 flex-1 pt-px",
                 state === "current" && "font-medium text-foreground",
                 state === "todo" && "text-foreground",
                 state === "done" && "text-muted-foreground",
@@ -270,6 +316,39 @@ function Plan({ plan, currentId, live }: { plan: RunPlanItem[]; currentId: strin
               {step.title}
               {state === "dropped" ? " (снят)" : ""}
             </span>
+          </>
+        )
+        return (
+          <li key={step.id}>
+            {rows.length > 0 ? (
+              <button
+                type="button"
+                className="flex w-full items-start gap-2.5 rounded-md py-0.5 text-left text-sm hover:bg-muted/60"
+                aria-expanded={open}
+                onClick={() => toggle(step.id)}
+              >
+                {label}
+                <span
+                  className={cn(
+                    "flex shrink-0 items-center gap-1 pt-px text-xs tabular-nums",
+                    hasError ? "text-status-bad-fg" : "text-muted-foreground",
+                  )}
+                >
+                  {calls > 0 ? `${calls} ${plural(calls, "вызов", "вызова", "вызовов")}` : "детали"}
+                  <ChevronRight
+                    className={cn("size-3.5 transition-transform", open && "rotate-90")}
+                    strokeWidth={2}
+                  />
+                </span>
+              </button>
+            ) : (
+              <div className="flex items-start gap-2.5 py-0.5 text-sm">{label}</div>
+            )}
+            {open ? (
+              <div className="mb-2 ml-[1.875rem] mt-1 border-l border-border pl-3">
+                <RunLog rows={rows} />
+              </div>
+            ) : null}
           </li>
         )
       })}
@@ -309,9 +388,13 @@ function PlanChanges({ changes }: { changes: PlanChange[] }) {
 function ConfirmCard({
   view,
   onApprove,
+  vacancies,
+  onOpenVacancy,
 }: {
   view: RunView
   onApprove?: (runId: number, approved: boolean) => void
+  vacancies?: Map<string, VacancyRef>
+  onOpenVacancy?: (vacancyId: string) => void
 }) {
   const [busy, setBusy] = useState(false)
   const action = view.card?.action ?? ""
@@ -335,7 +418,17 @@ function ConfirmCard({
           <div key={key}>
             <dt className="text-xs text-muted-foreground">{PARAM_LABEL[key] ?? key}</dt>
             <dd className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">
-              {String(value)}
+              {key === "vacancy_id" && vacancies?.get(String(value)) ? (
+                <button
+                  type="button"
+                  className="text-left font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
+                  onClick={() => onOpenVacancy?.(String(value))}
+                >
+                  {vacancyName(vacancies.get(String(value))!)}
+                </button>
+              ) : (
+                String(value)
+              )}
             </dd>
           </div>
         ))}
@@ -356,6 +449,8 @@ function ConfirmCard({
 
 type RunSummary = {
   rows: LogRow[]
+  rowsByStep: Map<string, LogRow[]>
+  mentions: string
   stepsTaken: number
   toolErrors: number
   currentStepId: string | null
@@ -368,12 +463,26 @@ function summarize(events: AgentEvent[]): RunSummary {
   let toolErrors = 0
   let currentStepId: string | null = null
   let finalVerdict: RunSummary["finalVerdict"] = null
+  const rowsByStep = new Map<string, LogRow[]>()
+  const mentionParts: string[] = []
   for (const ev of events) {
-    const row = toLogRow(ev)
-    if (row) rows.push(row)
     if (ev.type === "step_started") {
       stepsTaken += 1
       currentStepId = String(ev.payload.step_id ?? "")
+    }
+    const row = toLogRow(ev)
+    if (row) {
+      const own = typeof ev.payload.step_id === "string" ? ev.payload.step_id : null
+      row.stepId = own ?? currentStepId
+      rows.push(row)
+      if (row.kind !== "step" && row.stepId) {
+        const list = rowsByStep.get(row.stepId) ?? []
+        list.push(row)
+        rowsByStep.set(row.stepId, list)
+      }
+    }
+    if (ev.type === "tool_called" || ev.type === "observation") {
+      mentionParts.push(JSON.stringify(ev.payload))
     }
     if (ev.type === "tool_called" && ev.payload.ok === false) toolErrors += 1
     if (ev.type === "judge_verdict" && ev.payload.level !== "step") {
@@ -383,24 +492,56 @@ function summarize(events: AgentEvent[]): RunSummary {
       }
     }
   }
-  return { rows, stepsTaken, toolErrors, currentStepId, finalVerdict }
+  return {
+    rows,
+    rowsByStep,
+    mentions: mentionParts.join("\n"),
+    stepsTaken,
+    toolErrors,
+    currentStepId,
+    finalVerdict,
+  }
 }
 
 export function AgentRunView({
   view,
   showGoal = false,
   onApprove,
+  vacancies,
+  onOpenVacancy,
+  onRetry,
+  retryDisabled = false,
 }: {
   view: RunView
   showGoal?: boolean
   onApprove?: (runId: number, approved: boolean) => void
+  vacancies?: Map<string, VacancyRef>
+  onOpenVacancy?: (vacancyId: string) => void
+  onRetry?: (goal: string) => void
+  retryDisabled?: boolean
 }) {
   const status = view.status
   const terminal = TERMINAL.includes(status)
   const [logOpen, setLogOpen] = useState<boolean | null>(null)
   const open = logOpen ?? !terminal
 
-  const { rows, stepsTaken, toolErrors, currentStepId, finalVerdict } = summarize(view.events)
+  const { rows, rowsByStep, mentions, stepsTaken, toolErrors, currentStepId, finalVerdict } =
+    summarize(view.events)
+  const now = useNow(!terminal)
+  const startedMs = view.run.created_at ? Date.parse(view.run.created_at) : view.createdAtMs
+
+  // Вакансии, которые агент трогал: id в событиях инструментов, карточке и ответе,
+  // плюс названия, упомянутые в ответе. Порядок — как в базе аккаунта.
+  const mentioned: string[] = []
+  if (vacancies && vacancies.size > 0) {
+    const haystack = `${mentions}\n${JSON.stringify(view.card?.params ?? {})}\n${view.answer ?? ""}`
+    const answerLower = (view.answer ?? "").toLowerCase()
+    for (const [vid, ref] of vacancies) {
+      if (haystack.includes(vid) || (ref.title.length >= 8 && answerLower.includes(ref.title.toLowerCase()))) {
+        mentioned.push(vid)
+      }
+    }
+  }
 
   const durationMs =
     terminal && view.run.created_at && view.run.updated_at
@@ -408,7 +549,7 @@ export function AgentRunView({
       : NaN
   const meta = [
     stepsTaken > 0 ? `${stepsTaken} ${plural(stepsTaken, "шаг", "шага", "шагов")}` : null,
-    fmtDuration(durationMs) || null,
+    terminal ? fmtDuration(durationMs) || null : Number.isFinite(startedMs) ? `идёт ${fmtClock(now - startedMs)}` : null,
   ].filter(Boolean)
   const stopReason =
     view.run.stop_reason && view.run.stop_reason !== "answered"
@@ -448,7 +589,12 @@ export function AgentRunView({
             <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               План
             </div>
-            <Plan plan={view.plan} currentId={currentStepId} live={!terminal} />
+            <Plan
+              plan={view.plan}
+              currentId={currentStepId}
+              live={!terminal}
+              rowsByStep={rowsByStep}
+            />
           </div>
         ) : !terminal ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -459,7 +605,14 @@ export function AgentRunView({
 
         <PlanChanges changes={view.planChanges} />
 
-        {waiting ? <ConfirmCard view={view} onApprove={onApprove} /> : null}
+        {waiting ? (
+          <ConfirmCard
+            view={view}
+            onApprove={onApprove}
+            vacancies={vacancies}
+            onOpenVacancy={onOpenVacancy}
+          />
+        ) : null}
 
         {view.answer ? (
           <div className="border-t border-border pt-4">
@@ -490,6 +643,42 @@ export function AgentRunView({
               : finalVerdict.verdict === "fail"
                 ? `Судья: итог не принят${finalVerdict.reason ? ` — ${finalVerdict.reason}` : ""}`
                 : "Судья: итог не проверялся"}
+          </div>
+        ) : null}
+
+        {mentioned.length > 0 && vacancies ? (
+          <div>
+            <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Вакансии в запуске
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {mentioned.map((vid) => (
+                <button
+                  key={vid}
+                  type="button"
+                  className="max-w-full truncate rounded-full border border-border bg-card px-3 py-1 text-sm text-foreground transition-colors hover:border-slate-300 hover:bg-slate-50"
+                  title="Открыть карточку вакансии"
+                  onClick={() => onOpenVacancy?.(vid)}
+                >
+                  {vacancyName(vacancies.get(vid)!)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {terminal && onRetry ? (
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={retryDisabled}
+              onClick={() => onRetry(view.run.goal)}
+            >
+              <RotateCcw className="size-3.5" strokeWidth={2} />
+              Запустить заново
+            </Button>
           </div>
         ) : null}
       </div>

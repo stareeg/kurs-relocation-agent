@@ -92,4 +92,38 @@ describe("AgentRunView", () => {
     expect(onApprove).toHaveBeenCalledTimes(1)
     expect(onApprove).toHaveBeenCalledWith(1, true)
   })
+
+  it("шаг плана раскрывается своими вызовами, вакансии — названиями, повтор запуска", () => {
+    const onOpen = vi.fn()
+    const onRetry = vi.fn()
+    const vacancies = new Map([["demo-101", { title: "Senior LLM Engineer", company: "Northwind Labs" }]])
+    const view = makeView({
+      plan: [{ id: "s1", title: "Найти вакансии", status: "done" }],
+      answer: "Лучшая — demo-101.",
+      events: [
+        ev(1, "step_started", { index: 1, step_id: "s1", title: "Найти вакансии" }),
+        ev(2, "tool_called", { step_id: "s1", tool: "search_vacancies", ok: true, summary: "найдено 1: demo-101" }),
+      ],
+    })
+    render(<AgentRunView view={view} vacancies={vacancies} onOpenVacancy={onOpen} onRetry={onRetry} />)
+    fireEvent.click(screen.getByRole("button", { name: /Найти вакансии/ }))
+    expect(screen.getByText("Поиск вакансий")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Senior LLM Engineer · Northwind Labs" }))
+    expect(onOpen).toHaveBeenCalledWith("demo-101")
+    fireEvent.click(screen.getByRole("button", { name: /Запустить заново/ }))
+    expect(onRetry).toHaveBeenCalledWith("Проверь условия вакансии no-such-job")
+  })
+
+  it("живой запуск показывает секундомер, карточка — название вакансии", () => {
+    const vacancies = new Map([["demo-101", { title: "Senior LLM Engineer", company: "Northwind Labs" }]])
+    const view = makeView({
+      status: "waiting_approval",
+      live: true,
+      card: { action: "queue_application", params: { vacancy_id: "demo-101", cover_note: "Здравствуйте!" } },
+    })
+    render(<AgentRunView view={view} vacancies={vacancies} onApprove={vi.fn()} />)
+    expect(screen.getByText(/идёт \d+:\d{2}/)).toBeTruthy()
+    expect(screen.getAllByText("Senior LLM Engineer · Northwind Labs").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("button", { name: /Запустить заново/ })).toBeNull()
+  })
 })

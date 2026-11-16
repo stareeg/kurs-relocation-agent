@@ -3,6 +3,7 @@ import {
   createAgentChat,
   deleteAgentChat,
   listAgentChats,
+  renameAgentChat,
   type AgentChatSession,
 } from "@/api/agent"
 
@@ -80,7 +81,19 @@ export function useAgentSessions() {
     }
   }, [])
 
-  return { sessions, activeId, setActiveId, loading, refresh, create, remove }
+  const rename = useCallback(async (id: number, title: string): Promise<boolean> => {
+    const clean = title.trim().slice(0, 120)
+    if (!clean) return false
+    try {
+      const updated = await renameAgentChat(id, clean)
+      setSessions((cur) => cur.map((s) => (s.id === id ? { ...s, title: updated.title ?? clean } : s)))
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+
+  return { sessions, activeId, setActiveId, loading, refresh, create, remove, rename }
 }
 
 export type AgentSessions = ReturnType<typeof useAgentSessions>
