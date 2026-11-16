@@ -1,6 +1,8 @@
 import { useState } from "react"
-import { AlertTriangle, Check, ChevronRight, Loader2, X } from "lucide-react"
+import { AlertTriangle, Check, ChevronRight, Loader2, Pencil, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { COVER_NOTE_MAX, COVER_NOTE_MIN, type AgentApprovalEdits } from "@/api/agent"
 import { cn } from "@/lib/utils"
 import type { PlanChange, RunPlanItem, RunView } from "./use-agent-runs"
 import {
@@ -215,7 +217,7 @@ export function ConfirmCard({
   onOpenVacancy,
 }: {
   view: RunView
-  onApprove?: (runId: number, approved: boolean) => void
+  onApprove?: (runId: number, approved: boolean, edits?: AgentApprovalEdits) => void
   vacancies?: Map<string, VacancyRef>
   onOpenVacancy?: (vacancyId: string) => void
 }) {
@@ -223,11 +225,23 @@ export function ConfirmCard({
   const action = view.card?.action ?? ""
   const params = (view.card?.params ?? {}) as Record<string, unknown>
   const entries = Object.entries(params).filter(([, v]) => v != null && String(v).length > 0)
+  // Три ответа (PLAN 3.2): «да», «изменить» (текст для работодателя — до «да»), «нет».
+  const original = typeof params.cover_note === "string" ? params.cover_note : null
+  const editable = action === "queue_application" && original != null
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(original ?? "")
+  const length = draft.trim().length
+  const draftOk = length >= COVER_NOTE_MIN && length <= COVER_NOTE_MAX
+  const changed = draft.trim() !== (original ?? "").trim()
+
   const decide = (approved: boolean) => {
     if (!onApprove || busy) return
+    if (approved && editing && !draftOk) return
     setBusy(true)
-    onApprove(view.run.id, approved)
+    const edits = approved && editing && changed ? { cover_note: draft.trim() } : undefined
+    onApprove(view.run.id, approved, edits)
   }
+
   return (
     <div className="rounded-xl border border-status-warn-line bg-status-warn-soft p-4">
       <div className="text-xs font-medium uppercase tracking-wider text-status-warn-fg">
@@ -239,6 +253,35 @@ export function ConfirmCard({
       <dl className="mt-3 space-y-2">
         {entries.map(([key, value]) => {
           const ref = key === "vacancy_id" ? vacancies?.get(String(value)) : undefined
+          if (key === "cover_note" && editing) {
+            return (
+              <div key={key}>
+                <dt className="text-xs text-muted-foreground">
+                  <label htmlFor={`cover-note-${view.run.id}`}>{PARAM_LABEL[key] ?? key}</label>
+                </dt>
+                <dd className="mt-1">
+                  <Textarea
+                    id={`cover-note-${view.run.id}`}
+                    value={draft}
+                    autoFocus
+                    disabled={busy}
+                    maxLength={COVER_NOTE_MAX + 200}
+                    className="min-h-24 bg-card text-sm"
+                    onChange={(e) => setDraft(e.target.value)}
+                  />
+                  <div
+                    className={cn(
+                      "mt-1 text-xs tabular-nums",
+                      draftOk ? "text-muted-foreground" : "text-status-bad-fg",
+                    )}
+                  >
+                    {length} из {COVER_NOTE_MAX} знаков
+                    {length < COVER_NOTE_MIN ? ` · не короче ${COVER_NOTE_MIN}` : ""}
+                  </div>
+                </dd>
+              </div>
+            )
+          }
           return (
             <div key={key}>
               <dt className="text-xs text-muted-foreground">{PARAM_LABEL[key] ?? key}</dt>
@@ -260,11 +303,31 @@ export function ConfirmCard({
         })}
       </dl>
       {onApprove ? (
-        <div className="mt-4 flex gap-2">
-          <Button size="sm" disabled={busy} onClick={() => decide(true)}>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button size="sm" disabled={busy || (editing && !draftOk)} onClick={() => decide(true)}>
             {busy ? <Loader2 className="size-3.5 animate-spin" strokeWidth={2} /> : null}
-            Да, выполнить
+            {editing && changed ? "Да, с этим текстом" : "Да, выполнить"}
           </Button>
+          {editable ? (
+            editing ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false)
+                  setDraft(original ?? "")
+                }}
+              >
+                Вернуть текст агента
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setEditing(true)}>
+                <Pencil className="size-3.5" strokeWidth={2} />
+                Изменить текст
+              </Button>
+            )
+          ) : null}
           <Button size="sm" variant="outline" disabled={busy} onClick={() => decide(false)}>
             Отклонить
           </Button>

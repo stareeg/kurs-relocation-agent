@@ -8,6 +8,7 @@ OpenAPI-клиента. Доменные модели переиспользуе
 from __future__ import annotations
 
 from api.schemas.agent import (
+    AgentApprovalEdits,
     AgentApprovalIn,
     AgentChatMessageIn,
     AgentChatMessageList,
@@ -21,6 +22,8 @@ from api.schemas.agent import (
     AgentRunCreate,
     AgentRunList,
     AgentRunOut,
+    AgentSettingsIn,
+    AgentSettingsOut,
 )
 from api.schemas.attachments import AttachmentCropRequest, AttachmentOut
 from api.schemas.auth import (
@@ -292,6 +295,7 @@ from api.schemas.telegram import (
 
 __all__ = [
     "AddFriendRequest",
+    "AgentApprovalEdits",
     "AgentApprovalIn",
     "AgentChatMessageIn",
     "AgentChatMessageList",
@@ -305,6 +309,8 @@ __all__ = [
     "AgentRunCreate",
     "AgentRunList",
     "AgentRunOut",
+    "AgentSettingsIn",
+    "AgentSettingsOut",
     "AnketaConfirmRequest",
     "AnketaPendingItem",
     "AnketaPendingResponse",

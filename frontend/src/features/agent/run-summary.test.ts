@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest"
 import type { AgentEvent, AgentRun } from "@/api/agent"
 import type { RunView } from "./use-agent-runs"
-import { currentActivity, planProgress, runVacancies, summarize, type VacancyRef } from "./run-summary"
+import {
+  currentActivity,
+  findQuoteVacancy,
+  planProgress,
+  runVacancies,
+  summarize,
+  type VacancyRef,
+} from "./run-summary"
 
 function ev(id: number, type: string, payload: Record<string, unknown>): AgentEvent {
   return { id, type, payload, node: null, duration_ms: null, created_at: null }
@@ -146,5 +153,32 @@ describe("runVacancies", () => {
     expect(items.map((v) => v.id)).toEqual(["demo-101", "demo-102", "demo-103"])
     expect(items.find((v) => v.id === "demo-102")).toMatchObject({ score: 88, scoredInRun: true })
     expect(items.find((v) => v.id === "demo-101")).toMatchObject({ score: 74, scoredInRun: false })
+  })
+})
+
+describe("U-1: цитаты и подтверждения", () => {
+  it("findQuoteVacancy: регистр, «ё» и пробелы не мешают; сначала вакансии запуска", () => {
+    const map = new Map<string, VacancyRef>([
+      ["a", { title: "A", company: null, text: "Оплата в ЕВРО, найм через EOR" }],
+      ["b", { title: "B", company: null, text: "оплата в евро,   найм через EOR и ещё" }],
+    ])
+    expect(findQuoteVacancy("оплата в евро, найм через eor", map)).toBe("a")
+    expect(findQuoteVacancy("оплата в евро, найм через eor", map, ["b"])).toBe("b")
+    expect(findQuoteVacancy("коротко", map)).toBeNull()
+    expect(findQuoteVacancy("такого текста нигде нет", map)).toBeNull()
+  })
+
+  it("журнал различает автоподтверждение и правку текста человеком", () => {
+    const s = summarize([
+      ev(1, "run_started", { auto_confirm: true }),
+      ev(2, "confirmation_resolved", { approved: true, auto: true, card: { action: "queue_application", params: { vacancy_id: "demo-101" } } }),
+      ev(3, "confirmation_resolved", { approved: true, edited: ["cover_note"] }),
+    ])
+    expect(s.autoConfirm).toBe(true)
+    expect(s.autoActions).toEqual([{ id: 2, action: "queue_application", params: { vacancy_id: "demo-101" } }])
+    expect(s.rows.map((r) => r.title)).toEqual([
+      "Действие подтверждено автоматически",
+      "Человек подтвердил действие с правкой текста",
+    ])
   })
 })

@@ -81,6 +81,37 @@ describe("ChatPage — главный экран «Агент» (U-5)", () => {
     expect(localStorage.getItem("copilot.agent.work-panel")).toBe("1")
   })
 
+  it("режим подтверждения у поля ввода: «Автоматически» — через подтверждение, уходит PUT-ом", async () => {
+    const calls: { url: string; method: string; body: string | null }[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        const method = (init?.method ?? "GET").toUpperCase()
+        calls.push({ url, method, body: init?.body ? String(init.body) : null })
+        if (url.endsWith("/api/agent/settings")) {
+          return json(method === "PUT" ? JSON.parse(String(init?.body)) : { confirm_mode: "ask" })
+        }
+        return json({})
+      }),
+    )
+    renderChat()
+    const group = await screen.findByRole("group", { name: "Подтверждение отклика" })
+    expect(group).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Автоматически" }))
+    // Сначала спрашиваем: агент будет ставить отклики без «да».
+    expect(await screen.findByText("Подтверждать отклики автоматически?")).toBeTruthy()
+    expect(calls.some((c) => c.method === "PUT")).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "Включить" }))
+    await vi.waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.method === "PUT" && c.url.endsWith("/api/agent/settings") && c.body?.includes('"auto"'),
+        ),
+      ).toBe(true),
+    )
+  })
+
   it("запуск в ленте — компактная карточка, подробности — в панели", async () => {
     const goal = "Проверь условия найма вакансии no-such-job"
     vi.stubGlobal(

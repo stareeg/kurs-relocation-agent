@@ -2,20 +2,25 @@ import type { ReactNode } from "react"
 import { AlertTriangle, ChevronRight, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { MarkdownView } from "@/components/markdown-view"
+import { MarkdownView, type QuoteAction } from "@/components/markdown-view"
+import type { AgentApprovalEdits } from "@/api/agent"
 import { cn } from "@/lib/utils"
 import type { RunView } from "./use-agent-runs"
 import { ConfirmCard } from "./run-parts"
 import {
+  ACTION_LABEL,
   STATUS,
   STOP_REASON_TEXT,
   TERMINAL,
   currentActivity,
+  findQuoteVacancy,
   fmtClock,
   fmtDuration,
   planProgress,
   plural,
+  runVacancies,
   summarize,
+  vacancyName,
   type VacancyRef,
 } from "./run-summary"
 import { useNow } from "./use-now"
@@ -43,8 +48,9 @@ export function AgentRunCard({
   selected?: boolean
   vacancies?: Map<string, VacancyRef>
   onShowWork?: (runId: number) => void
-  onApprove?: (runId: number, approved: boolean) => void
-  onOpenVacancy?: (vacancyId: string) => void
+  onApprove?: (runId: number, approved: boolean, edits?: AgentApprovalEdits) => void
+  /** Открыть карточку вакансии; `quote` — подсветить цитату в её тексте. */
+  onOpenVacancy?: (vacancyId: string, quote?: string) => void
   onRetry?: (goal: string) => void
   retryDisabled?: boolean
 }) {
@@ -113,6 +119,17 @@ export function AgentRunCard({
   }
 
   // На узком экране — только «Ход работы ›», иначе статус в строке обрезается.
+  // Цитаты «…» в ответе ведут к месту в тексте вакансии (как цитаты оценки в «Вакансиях»):
+  // ищем сначала среди вакансий запуска, потом по всей базе аккаунта.
+  const preferred = view.answer ? runVacancies(view, summary, vacancies).map((v) => v.id) : []
+  const quoteAction: QuoteAction | undefined =
+    view.answer && onOpenVacancy && vacancies
+      ? (quote) => {
+          const vid = findQuoteVacancy(quote, vacancies, preferred)
+          return vid ? () => onOpenVacancy(vid, quote) : null
+        }
+      : undefined
+
   const workCount =
     summary.actions > 0
       ? ` · ${summary.actions} ${plural(summary.actions, "действие", "действия", "действий")}`
@@ -143,7 +160,10 @@ export function AgentRunCard({
             </span>
           ) : null}
           {clock ? (
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{clock}</span>
+            // На узком экране секундомер уступает место строке шага.
+            <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">
+              {clock}
+            </span>
           ) : null}
           {onShowWork ? (
             <button
@@ -178,7 +198,18 @@ export function AgentRunCard({
         />
       ) : null}
 
-      {view.answer ? <MarkdownView markdown={view.answer} chat /> : null}
+      {view.answer ? <MarkdownView markdown={view.answer} chat quoteAction={quoteAction} /> : null}
+
+      {summary.autoActions.map((a) => {
+        const vid = typeof a.params.vacancy_id === "string" ? a.params.vacancy_id : null
+        const ref = vid ? vacancies?.get(vid) : undefined
+        return (
+          <div key={a.id} className="text-sm text-muted-foreground">
+            Подтверждено автоматически: {ACTION_LABEL[a.action] ?? a.action}
+            {ref ? ` · ${vacancyName(ref)}` : vid ? ` · ${vid}` : ""}
+          </div>
+        )
+      })}
 
       {view.error ? (
         <div className="flex items-start gap-2 rounded-lg bg-status-bad-soft px-3 py-2 text-sm text-status-bad-fg">

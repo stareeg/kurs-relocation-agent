@@ -188,6 +188,27 @@ async def get_ui_features(*, db: Executor | None = None) -> dict[str, bool]:
     return features
 
 
+# OQ-8 / U-1: режим подтверждения действий агента на аккаунт. «ask» — карточка и пауза до
+# «да» человека (умолчание), «auto» — действие уходит сразу, событие остаётся в ленте запуска.
+KEY_AGENT_CONFIRM_MODE = "agent_confirm_mode"
+AGENT_CONFIRM_MODES = ("ask", "auto")
+
+
+async def get_agent_confirm_mode(*, account_id: int | None, db: Executor | None = None) -> str:
+    """Режим подтверждения действий агента; неизвестное или пустое значение — «ask»."""
+    raw = await get_setting(KEY_AGENT_CONFIRM_MODE, default=None, account_id=account_id, db=db)
+    return raw if raw in AGENT_CONFIRM_MODES else "ask"
+
+
+async def set_agent_confirm_mode(
+    mode: str, *, account_id: int | None, db: Executor | None = None
+) -> None:
+    """Сохранить режим подтверждения; вне `AGENT_CONFIRM_MODES` — ошибка вызывающего."""
+    if mode not in AGENT_CONFIRM_MODES:
+        raise ValueError(f"неизвестный режим подтверждения: {mode}")
+    await set_setting(KEY_AGENT_CONFIRM_MODE, mode, account_id=account_id, db=db)
+
+
 async def is_extension_confirmed(*, account_id: int | None, db: Executor | None = None) -> bool:
     """Пользователь отметил «Расширение установлено» на шаге онбординга."""
     raw = await get_setting(KEY_ONBOARDING, default=None, account_id=account_id, db=db)
@@ -390,10 +411,13 @@ async def prime_runtime_openrouter_key_for_account(
 
 
 __all__ = [
+    "AGENT_CONFIRM_MODES",
     "DEFAULT_COMPANY_ADJUSTMENTS",
     "DEFAULT_SCORING_IMPORTANCE",
     "DEFAULT_SCORING_WEIGHTS",
+    "KEY_AGENT_CONFIRM_MODE",
     "KEY_ONBOARDING",
+    "get_agent_confirm_mode",
     "get_extension_version",
     "get_openrouter_key_set_at",
     "get_runner_tick",
@@ -403,6 +427,7 @@ __all__ = [
     "load_openrouter_key_into_runtime",
     "prime_runtime_openrouter_key_for_account",
     "record_runner_tick",
+    "set_agent_confirm_mode",
     "set_extension_confirmed",
     "set_extension_version",
     "set_setting",

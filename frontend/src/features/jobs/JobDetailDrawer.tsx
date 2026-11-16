@@ -867,7 +867,16 @@ function DrawerFooter({
   )
 }
 
-function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: boolean) => void }) {
+function DrawerBody({
+  job,
+  onOpenChange,
+  initialQuote = null,
+}: {
+  job: Job
+  onOpenChange: (open: boolean) => void
+  /** Цитата, с которой дровер открыли (ответ агента, U-1): сразу вкладка «Вакансия» с подсветкой. */
+  initialQuote?: string | null
+}) {
   const s = job.score // B-03: типизировано контрактом (ScoreResult | null), не ручной проекцией
   const remote = remoteFeasibilityOf(job) // под-скор реальности удалёнки (feature 2.2)
   const remoteChip = remote?.verdict ? REMOTE_FEASIBILITY[remote.verdict] : undefined
@@ -949,7 +958,9 @@ function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: bool
   // же вакансии (readStoredDrawerTab возвращает «decision» для любой другой), чтобы F5 сохранял
   // вкладку, а открытие другой карточки — сбрасывало на «Решение».
   const vacancyId = job.vacancy_id ?? ""
-  const [activeTab, setActiveTabState] = useState<DrawerTab>(() => readStoredDrawerTab(vacancyId))
+  const [activeTab, setActiveTabState] = useState<DrawerTab>(() =>
+    initialQuote ? "vacancy" : readStoredDrawerTab(vacancyId),
+  )
   const setActiveTab = (tab: DrawerTab) => {
     setActiveTabState(tab)
     writeStoredDrawerTab(vacancyId, tab)
@@ -957,7 +968,16 @@ function DrawerBody({ job, onOpenChange }: { job: Job; onOpenChange: (open: bool
 
   // Цитата сигналов формата (карточка «Формат» на «Решении») подсвечивается в тексте
   // вакансии — клик по сигналу ещё и переключает на вкладку «Вакансия».
-  const [activeQuote, setActiveQuote] = useState<string | null>(null)
+  const [activeQuote, setActiveQuote] = useState<string | null>(initialQuote)
+  // Та же карточка открыта заново с другой цитатой — подстройка во время рендера, без эффекта.
+  const [seenQuote, setSeenQuote] = useState(initialQuote)
+  if (initialQuote !== seenQuote) {
+    setSeenQuote(initialQuote)
+    if (initialQuote) {
+      setActiveQuote(initialQuote)
+      setActiveTabState("vacancy")
+    }
+  }
   const [formatOpen, setFormatOpen] = useState(false)
   function revealQuote(quote: string) {
     setActiveQuote(quote)
@@ -1234,9 +1254,12 @@ function DrawerResizeHandle({ onResize }: { onResize: (width: number) => void })
 export function JobDetailDrawer({
   job,
   onOpenChange,
+  quote = null,
 }: {
   job: Job | null
   onOpenChange: (open: boolean) => void
+  /** Подсветить цитату в тексте вакансии при открытии (клик по цитате в ответе агента). */
+  quote?: string | null
 }) {
   // Снимок последней непустой вакансии: при закрытии (job=null) контент остаётся для анимации ухода,
   // radix размонтирует после неё. Подстройка во время рендера (паттерн React «adjust state on prop
@@ -1254,7 +1277,9 @@ export function JobDetailDrawer({
         style={{ width: `min(100%, ${clampDrawerWidth(width)}px)` }}
       >
         <DrawerResizeHandle onResize={resize} />
-        {shown && <DrawerBody key={shown.id} job={shown} onOpenChange={onOpenChange} />}
+        {shown && (
+          <DrawerBody key={shown.id} job={shown} onOpenChange={onOpenChange} initialQuote={quote} />
+        )}
       </SheetContent>
     </Sheet>
   )

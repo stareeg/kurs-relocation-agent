@@ -193,6 +193,11 @@ export function AgentWorkPanel({
               <span className={cn("font-medium", STATUS[view.status].tone)}>
                 {STATUS[view.status].label}
               </span>
+              {summary.autoConfirm ? (
+                <span className="text-muted-foreground" title="Действия уходят без вопроса">
+                  · подтверждение автоматически
+                </span>
+              ) : null}
               {runCount != null && runCount > 1 && runIndex != null ? (
                 <span className="text-muted-foreground">
                   · запуск {runIndex} из {runCount}

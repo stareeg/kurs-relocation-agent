@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -95,6 +95,10 @@ class AgentState(TypedDict):
     vacancies: list[dict[str, Any]]  # найденные вакансии (из результатов инструментов)
     routes: list[dict[str, Any]]  # маршруты релокации (K-3; в каркасе пусто)
     pending_action: dict[str, Any] | None  # карточка действия, ждущего подтверждения (A-3)
+    # Режим подтверждения действий (OQ-8, U-1): True — «подтверждать автоматически».
+    # Фиксируется на старте запуска: после резюма узел `confirm` перевыполняется, и чтение
+    # настройки там могло бы обойти уже данное «нет».
+    auto_confirm: NotRequired[bool]
 
     # Счётчики и пределы
     steps_taken: int

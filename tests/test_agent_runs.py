@@ -250,3 +250,38 @@ async def test_approval_of_finished_run_is_rejected():
         await manager.approve(run_id=record.id, account_id=1, approved=True)
     with pytest.raises(NotFound):
         await manager.approve(run_id=999, account_id=1, approved=True)
+
+
+async def test_approve_with_edit_records_edited_fields():
+    """«Да» с правкой текста: событие знает, что правили, в базу ушёл текст человека."""
+    db = FakeDemoDb()
+    store = InMemoryRunsStore()
+    manager = AgentRunsManager(store, deps_factory=_deps_factory(db), checkpointer=MemorySaver())
+    record = await manager.start_run(account_id=1, goal=GOAL)
+    await _settle(manager, record.id)
+    edited = "Здравствуйте! Текст поправлен человеком перед отправкой, без выдуманных фактов."
+    await manager.approve(
+        run_id=record.id, account_id=1, approved=True, edits={"cover_note": edited}
+    )
+    final = await _settle(manager, record.id, terminal=True)
+    assert final.status == "done"
+    resolved = [e for e in store.events if e.type == "confirmation_resolved"]
+    assert resolved[-1].payload == {"approved": True, "edited": ["cover_note"]}
+    assert any(edited in str(args) for _, args in db.executed)
+
+
+async def test_auto_confirm_run_never_waits():
+    """Запуск в режиме «подтверждать автоматически»: без waiting_approval, отклик в очереди."""
+    db = FakeDemoDb()
+    store = InMemoryRunsStore()
+    manager = AgentRunsManager(store, deps_factory=_deps_factory(db), checkpointer=MemorySaver())
+    record = await manager.start_run(account_id=1, goal=GOAL, auto_confirm=True)
+    final = await _settle(manager, record.id, terminal=True)
+    assert final.status == "done"
+    types = store.event_types(record.id)
+    assert "needs_confirmation" not in types
+    started = [e for e in store.events if e.type == "run_started"]
+    assert started[-1].payload["auto_confirm"] is True
+    auto = [e for e in store.events if e.type == "confirmation_resolved"]
+    assert auto and auto[-1].payload["auto"] is True
+    assert any("auto_apply_queue_overrides" in sql for sql, _ in db.executed)

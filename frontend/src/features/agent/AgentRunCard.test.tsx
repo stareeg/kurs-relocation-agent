@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { AgentEvent, AgentRun } from "@/api/agent"
 import { AgentRunCard } from "./AgentRunCard"
 import type { RunView } from "./use-agent-runs"
+import type { VacancyRef } from "./run-summary"
 
 afterEach(cleanup)
 
@@ -130,7 +131,7 @@ describe("AgentRunCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Да, выполнить" }))
     fireEvent.click(screen.getByRole("button", { name: "Да, выполнить" }))
     expect(onApprove).toHaveBeenCalledTimes(1)
-    expect(onApprove).toHaveBeenCalledWith(1, true)
+    expect(onApprove).toHaveBeenCalledWith(1, true, undefined)
   })
 
   it("упавший запуск: текст ошибки и «Повторить»", () => {
@@ -141,5 +142,83 @@ describe("AgentRunCard", () => {
     expect(screen.getAllByText(/сбой модели/).length).toBeGreaterThan(0)
     fireEvent.click(screen.getByRole("button", { name: /Повторить/ }))
     expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("AgentRunCard — U-1: правка письма, автоподтверждение, цитаты", () => {
+  const card = {
+    action: "queue_application",
+    params: { vacancy_id: "demo-101", cover_note: "Здравствуйте! Пять лет пишу backend на Python и агентов." },
+  }
+
+  it("«Изменить текст»: правка в пределах 40–600 знаков уходит вместе с «да»", () => {
+    const onApprove = vi.fn()
+    const view = makeView({ status: "waiting_approval", live: true, card })
+    render(<AgentRunCard view={view} vacancies={vacancies} onApprove={onApprove} />)
+    fireEvent.click(screen.getByRole("button", { name: "Изменить текст" }))
+    const box = screen.getByLabelText("Сообщение работодателю") as HTMLTextAreaElement
+    expect(box.value).toBe(card.params.cover_note)
+    fireEvent.change(box, { target: { value: "Коротко" } })
+    expect(screen.getByText(/не короче 40/)).toBeTruthy()
+    expect((screen.getByRole("button", { name: /Да, с этим текстом/ }) as HTMLButtonElement).disabled).toBe(true)
+    const edited = "Здравствуйте! Текст поправлен вручную: опыт с LLM-агентами и Postgres."
+    fireEvent.change(box, { target: { value: edited } })
+    fireEvent.click(screen.getByRole("button", { name: /Да, с этим текстом/ }))
+    expect(onApprove).toHaveBeenCalledWith(1, true, { cover_note: edited })
+  })
+
+  it("«Вернуть текст агента» отменяет правку; «Отклонить» уходит без правки", () => {
+    const onApprove = vi.fn()
+    const view = makeView({ status: "waiting_approval", live: true, card })
+    render(<AgentRunCard view={view} vacancies={vacancies} onApprove={onApprove} />)
+    fireEvent.click(screen.getByRole("button", { name: "Изменить текст" }))
+    fireEvent.change(screen.getByLabelText("Сообщение работодателю"), {
+      target: { value: "Совсем другой текст письма, длиннее сорока знаков точно." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Вернуть текст агента" }))
+    expect(screen.getByText(card.params.cover_note)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Отклонить" }))
+    expect(onApprove).toHaveBeenCalledWith(1, false, undefined)
+  })
+
+  it("действие без вопроса видно строкой в ленте", () => {
+    const view = makeView({
+      answer: "Отклик поставлен.",
+      events: [
+        ev(1, "run_started", { auto_confirm: true }),
+        ev(2, "confirmation_resolved", { approved: true, auto: true, card }),
+      ],
+    })
+    render(<AgentRunCard view={view} vacancies={vacancies} />)
+    expect(
+      screen.getByText(
+        "Подтверждено автоматически: Поставить отклик в очередь автооткликов · Senior LLM Engineer · Northwind Labs",
+      ),
+    ).toBeTruthy()
+  })
+
+  it("цитата из ответа кликается и открывает вакансию, где она стоит", () => {
+    const onOpen = vi.fn()
+    const withText = new Map<string, VacancyRef>([
+      ...vacancies,
+      [
+        "demo-101",
+        {
+          title: "Senior LLM Engineer",
+          company: "Northwind Labs",
+          score: 74,
+          text: "Формат: Удалённо   из любой точки мира. Найм через EOR.",
+        },
+      ],
+    ])
+    const view = makeView({
+      answer: "Подходит: «удалённо из любой точки мира». Не нашлось: «офис в Берлине обязателен».",
+    })
+    render(<AgentRunCard view={view} vacancies={withText} onOpenVacancy={onOpen} />)
+    fireEvent.click(screen.getByRole("button", { name: "«удалённо из любой точки мира»" }))
+    expect(onOpen).toHaveBeenCalledWith("demo-101", "удалённо из любой точки мира")
+    // Цитаты, которой нет ни в одном тексте, — просто текст.
+    expect(screen.queryByRole("button", { name: /офис в Берлине/ })).toBeNull()
+    expect(screen.getByText(/офис в Берлине обязателен/)).toBeTruthy()
   })
 })

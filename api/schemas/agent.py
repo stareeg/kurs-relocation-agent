@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,10 +33,30 @@ class AgentRunList(BaseModel):
     items: list[AgentRunOut]
 
 
+class AgentApprovalEdits(BaseModel):
+    """Правка карточки перед «да» (U-1): текст для работодателя, пределы — как у `queue_application`."""
+
+    cover_note: str | None = Field(default=None, min_length=40, max_length=600)
+
+
 class AgentApprovalIn(BaseModel):
-    """Решение человека по карточке действия: «да» выполняет действие, «нет» отклоняет."""
+    """Решение человека по карточке действия: «да» выполняет действие, «нет» отклоняет.
+
+    `edits` — «да» с правкой: узел `confirm` подставит текст человека вместо текста агента.
+    """
 
     approved: bool
+    edits: AgentApprovalEdits | None = None
+
+
+class AgentSettingsOut(BaseModel):
+    """Настройки агента аккаунта: режим подтверждения действий (OQ-8)."""
+
+    confirm_mode: Literal["ask", "auto"]
+
+
+class AgentSettingsIn(BaseModel):
+    confirm_mode: Literal["ask", "auto"]
 
 
 class AgentEventOut(BaseModel):

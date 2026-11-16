@@ -17,7 +17,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
 from core.app.agent.contracts import ToolContext
-from core.app.agent.graph import AgentDeps, build_agent_graph, confirm_node
+from core.app.agent.graph import (
+    EDITABLE_PARAMS,
+    AgentDeps,
+    apply_edits,
+    build_agent_graph,
+    confirm_node,
+)
 from core.app.agent.state import AgentState
 from core.app.agent.tools import TOOLS, ensure_tools_registered
 from tests.fakes import FakeDemoDb, ScriptedChatModel
@@ -216,3 +222,100 @@ async def test_confirm_node_approval_executes_tool(approved: bool):
     else:
         assert observations[-1].error and "отклонил" in observations[-1].error
         assert db.executed == []
+
+
+# ---------------------------------------------------------------- U-1: правка и автоподтверждение
+
+EDITED = "Здравствуйте! Пишу сам: пять лет backend на Python, готов к собеседованию на этой неделе."
+
+
+class _Events:
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def emit(self, event: Any) -> None:
+        self.events.append(event)
+
+    def of_type(self, event_type: str) -> list[Any]:
+        return [e for e in self.events if e.type == event_type]
+
+
+def _pending_state(**extra: Any) -> dict[str, Any]:
+    return {
+        "pending_action": {
+            "action": "queue_application",
+            "params": _QUEUE_ARGS,
+            "step_id": "s1",
+            "index": 1,
+        },
+        **extra,
+    }
+
+
+def _written(db: FakeDemoDb) -> str:
+    return "\n".join(f"{sql} {args}" for sql, args in db.executed)
+
+
+def test_apply_edits_whitelist_only_cover_note():
+    """Править можно только текст для работодателя; вакансию правкой не подменить."""
+    params, changed = apply_edits(
+        "queue_application",
+        dict(_QUEUE_ARGS),
+        {"cover_note": f"  {EDITED}  ", "vacancy_id": "demo-999"},
+    )
+    assert params == {"vacancy_id": "demo-101", "cover_note": EDITED}
+    assert changed == ["cover_note"]
+    # Тот же текст, пустая строка и не-словарь — не правка.
+    assert apply_edits("queue_application", dict(_QUEUE_ARGS), {"cover_note": NOTE})[1] == []
+    assert apply_edits("queue_application", dict(_QUEUE_ARGS), {"cover_note": "  "})[1] == []
+    assert apply_edits("queue_application", dict(_QUEUE_ARGS), None)[1] == []
+    assert EDITABLE_PARAMS["queue_application"] == frozenset({"cover_note"})
+
+
+async def test_approval_with_edit_sends_human_text():
+    """«Да» с правкой: в базу уходит текст человека, вакансия прежняя, наблюдение знает о правке."""
+    db = FakeDemoDb()
+    graph = _tiny_graph(db)
+    config = {"configurable": {"thread_id": "tiny-edit"}}
+    await graph.ainvoke(_pending_state(), config=config)
+    final = await graph.ainvoke(
+        Command(
+            resume={"approved": True, "edits": {"cover_note": EDITED, "vacancy_id": "demo-999"}}
+        ),
+        config=config,
+    )
+    written = _written(db)
+    assert EDITED in written, "в карточку вакансии записан текст человека"
+    assert NOTE not in written, "текст агента не ушёл"
+    assert "demo-999" not in written, "вакансию правкой не подменить"
+    last = final["observations"][-1]
+    assert last.error is None
+    assert "поправил cover_note" in last.summaries[-1]
+
+
+async def test_auto_confirm_executes_without_pause():
+    """Режим «подтверждать автоматически»: паузы нет, действие выполнено, событие с карточкой."""
+    db = FakeDemoDb()
+    events = _Events()
+    graph = _tiny_graph(db, observer=events)
+    config = {"configurable": {"thread_id": "tiny-auto"}}
+    final = await graph.ainvoke(_pending_state(auto_confirm=True), config=config)
+    assert not final.get("__interrupt__"), "без паузы на подтверждении"
+    assert final["pending_action"] is None
+    assert any("auto_apply_queue_overrides" in sql for sql, _ in db.executed)
+    resolved = events.of_type("confirmation_resolved")
+    assert resolved and resolved[-1].payload["auto"] is True
+    assert resolved[-1].payload["card"]["params"]["vacancy_id"] == "demo-101"
+    assert "автоматически" in final["observations"][-1].summaries[-1]
+
+
+async def test_auto_confirm_works_without_checkpointer():
+    """Без чекпойнта пауза невозможна, но автоподтверждению она и не нужна."""
+    db = FakeDemoDb()
+    graph: StateGraph = StateGraph(AgentState)
+    graph.add_node("confirm", confirm_node(ToolContext(account_id=1, db=db), None, pausable=False))
+    graph.add_edge(START, "confirm")
+    graph.add_edge("confirm", END)
+    final = await graph.compile().ainvoke(_pending_state(auto_confirm=True))
+    assert final["pending_action"] is None
+    assert any("auto_apply_queue_overrides" in sql for sql, _ in db.executed)

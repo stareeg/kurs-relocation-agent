@@ -30,12 +30,15 @@ from api.schemas import (
     AgentRunCreate,
     AgentRunList,
     AgentRunOut,
+    AgentSettingsIn,
+    AgentSettingsOut,
 )
 from api.security import AccountContext, require_account_context
 from core.app.agent.runs import TERMINAL_EVENT_TYPES, get_runs_manager
 from core.kernel.errors import DomainError
 from core.platform.repo import agent_chats as chats_repo
 from core.platform.repo import agent_runs as runs_repo
+from core.platform.repo.settings import get_agent_confirm_mode, set_agent_confirm_mode
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +114,13 @@ async def create_agent_run(
             session = await chats_repo.get_session(body.session_id, account_id=account.account_id)
             if session is None:
                 raise DomainError(f"Диалог {body.session_id} не найден", code="not_found")
+        # Режим подтверждения (OQ-8) фиксируется на старте: переключатель меняет следующие запуски.
+        mode = await get_agent_confirm_mode(account_id=account.account_id)
         record = await manager.start_run(
-            account_id=account.account_id, goal=body.goal.strip(), session_id=body.session_id
+            account_id=account.account_id,
+            goal=body.goal.strip(),
+            session_id=body.session_id,
+            auto_confirm=mode == "auto",
         )
     except DomainError as exc:
         raise to_http(exc) from exc
@@ -244,10 +252,11 @@ async def approve_agent_run(
     body: AgentApprovalIn,
     account: AccountContext = Depends(require_account_context),
 ) -> AgentRunOut:
-    """Решение по карточке действия: «да» выполняет действие, «нет» отклоняет."""
+    """Решение по карточке действия: «да» выполняет действие (с правкой текста), «нет» отклоняет."""
     try:
+        edits = body.edits.model_dump(exclude_none=True) if body.edits is not None else None
         record = await get_runs_manager().approve(
-            run_id=run_id, account_id=account.account_id, approved=body.approved
+            run_id=run_id, account_id=account.account_id, approved=body.approved, edits=edits
         )
     except DomainError as exc:
         raise to_http(exc) from exc
@@ -255,3 +264,24 @@ async def approve_agent_run(
         raise HTTPException(status_code=503, detail=f"БД недоступна: {exc}") from exc
     fresh = await runs_repo.get_run(run_id, account_id=account.account_id)
     return run_out(fresh or record)
+
+
+@router.get("/settings", response_model=AgentSettingsOut)
+async def get_agent_settings(
+    account: AccountContext = Depends(require_account_context),
+) -> AgentSettingsOut:
+    """Настройки агента аккаунта: режим подтверждения действий (OQ-8)."""
+    mode = await get_agent_confirm_mode(account_id=account.account_id)
+    return AgentSettingsOut(confirm_mode="auto" if mode == "auto" else "ask")
+
+
+@router.put("/settings", response_model=AgentSettingsOut)
+async def put_agent_settings(
+    body: AgentSettingsIn, account: AccountContext = Depends(require_account_context)
+) -> AgentSettingsOut:
+    """«Спрашивать каждый раз» / «подтверждать автоматически»; действует на следующие запуски."""
+    try:
+        await set_agent_confirm_mode(body.confirm_mode, account_id=account.account_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"БД недоступна: {exc}") from exc
+    return AgentSettingsOut(confirm_mode=body.confirm_mode)

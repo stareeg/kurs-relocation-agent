@@ -238,14 +238,43 @@ def _emit_judge(
     )
 
 
+# Что человек может поправить в карточке перед «да» (U-1): только текст для работодателя.
+# Вакансию и само действие правкой не подменить — это уже другое решение, его принимает агент.
+EDITABLE_PARAMS: dict[str, frozenset[str]] = {"queue_application": frozenset({"cover_note"})}
+
+
+def apply_edits(
+    action: str, params: dict[str, Any], edits: Any
+) -> tuple[dict[str, Any], list[str]]:
+    """Правки человека поверх параметров карточки: белый список полей, пустые и те же — мимо."""
+    merged = dict(params)
+    changed: list[str] = []
+    if not isinstance(edits, dict):
+        return merged, changed
+    allowed = EDITABLE_PARAMS.get(action, frozenset())
+    for key, value in edits.items():
+        if key not in allowed or not isinstance(value, str):
+            continue
+        text = value.strip()
+        if text and text != str(params.get(key, "")).strip():
+            merged[key] = text
+            changed.append(key)
+    return merged, changed
+
+
 def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pausable: bool) -> Any:
     """Узел `confirm` (A-3): пауза на подтверждении действия.
 
     Шаг поставил карточку в `pending_action` → узел вызывает `interrupt()`: граф
     останавливается, состояние лежит в чекпойнте, менеджер запуска ждёт решения.
     «Да» — резюм с тем же чекпойнта: узел выполняет действие и дописывает наблюдение
-    (последнее наблюдение — уже про результат действия, чек закроет шаг). «Нет» —
-    наблюдение с ошибкой: шаг останется открытым, агент перестроится.
+    (последнее наблюдение — уже про результат действия, чек закроет шаг). «Да» с правкой —
+    то же действие с текстом человека (`EDITABLE_PARAMS`). «Нет» — наблюдение с ошибкой:
+    шаг останется открытым, агент перестроится.
+
+    Режим «подтверждать автоматически» (OQ-8, `auto_confirm` в состоянии): паузы нет,
+    действие выполняется сразу, а событие `confirmation_resolved` с `auto` и карточкой
+    остаётся в ленте — видно, что и с какими параметрами ушло без вопроса.
 
     Без чекпойнта пауза невозможна (нечем резюмить) — узел пропускает: карточка остаётся
     в состоянии как в A-2 (модель получает «отложено», действие не выполняется).
@@ -255,35 +284,53 @@ def confirm_node(base_context: ToolContext, observer: RunObserver | None, *, pau
         pending = state.get("pending_action")
         if not pending:
             return {}
-        if not pausable:
+        auto = bool(state.get("auto_confirm"))
+        if not pausable and not auto:
             return {}
-        decision: Any = interrupt(
-            {
-                "action": str(pending.get("action", "")),
-                "params": pending.get("params") or {},
-                "step_id": str(pending.get("step_id") or state.get("current_step_id") or ""),
-            }
-        )
-        approved = bool(decision.get("approved"))
-        # Событие confirmation_resolved отдаёт менеджер запусков сразу после решения —
-        # узел его не дублирует (второй проход узла после резюма).
         step_id = str(pending.get("step_id") or state.get("current_step_id") or "s?")
         index = int(pending.get("index") or state.get("steps_taken") or 1)
         action = str(pending.get("action", ""))
+        card = {
+            "action": action,
+            "params": pending.get("params") or {},
+            "step_id": str(pending.get("step_id") or state.get("current_step_id") or ""),
+        }
+        if auto:
+            decision: Any = {"approved": True}
+            if observer is not None:
+                observer.emit(
+                    AgentEvent(
+                        type="confirmation_resolved",
+                        payload={"approved": True, "auto": True, "card": card},
+                        node="confirm",
+                    )
+                )
+        else:
+            # Событие confirmation_resolved отдаёт менеджер запусков сразу после решения —
+            # узел его не дублирует (второй проход узла после резюма).
+            decision = interrupt(card)
+        approved = bool(decision.get("approved"))
         if approved:
-            # Человек сказал «да»: выполнить действие с автоподтверждением. Тот же
-            # ToolContext → общие submissions, идемпотентность дублей сохраняется.
-            call = ToolCall(
-                id=f"{action}-approval-{index}",
-                name=action,
-                arguments=dict(pending.get("params") or {}),
+            params, edited = apply_edits(
+                action, dict(pending.get("params") or {}), decision.get("edits")
             )
+            # Человек сказал «да» (или включён автоподтверждатель): выполнить действие с
+            # автоподтверждением. Тот же ToolContext → общие submissions, идемпотентность
+            # дублей сохраняется.
+            call = ToolCall(id=f"{action}-approval-{index}", name=action, arguments=params)
             ctx = replace(base_context, confirm=lambda _card: True)
             result, error, _ = await execute_tool(call, ctx)
+            who = (
+                "автоматически (режим «подтверждать автоматически»)"
+                if auto
+                else "после подтверждения человеком"
+            )
             if error is None:
-                summary = f"{action}: выполнено после подтверждения человеком"
+                summary = f"{action}: выполнено {who}"
+                if edited:
+                    summary += f"; человек поправил {', '.join(edited)} перед отправкой"
             else:
-                summary = f"{action}: ошибка после подтверждения — {error.message}"
+                summary = f"{action}: ошибка {who} — {error.message}"
             observation = Observation(
                 step_id=step_id,
                 index=index,
@@ -674,6 +721,8 @@ __all__ = [
     "AgentDeps",
     "build_agent_graph",
     "check_node",
+    "EDITABLE_PARAMS",
+    "apply_edits",
     "confirm_node",
     "default_deps",
     "derive_stop_reason",

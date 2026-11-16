@@ -111,8 +111,36 @@ export async function replayAgentRunEvents(runId: number): Promise<AgentEvent[]>
   return res.items ?? []
 }
 
-export function approveAgentRun(runId: number, approved: boolean): Promise<AgentRun> {
-  return api.post<AgentRun>(`/api/agent/runs/${runId}/approval`, { approved })
+/** Правка карточки перед «да» (U-1): текст для работодателя, 40–600 знаков, как у инструмента. */
+export type AgentApprovalEdits = { cover_note?: string }
+
+export const COVER_NOTE_MIN = 40
+export const COVER_NOTE_MAX = 600
+
+export function approveAgentRun(
+  runId: number,
+  approved: boolean,
+  edits?: AgentApprovalEdits,
+): Promise<AgentRun> {
+  return api.post<AgentRun>(`/api/agent/runs/${runId}/approval`, {
+    approved,
+    ...(edits ? { edits } : {}),
+  })
+}
+
+// ---------------------------------------------------------------- настройки агента
+
+/** Режим подтверждения действий (OQ-8): спрашивать каждый раз или подтверждать автоматически. */
+export type AgentConfirmMode = "ask" | "auto"
+
+export type AgentSettings = { confirm_mode: AgentConfirmMode }
+
+export function getAgentSettings(): Promise<AgentSettings> {
+  return api.get<AgentSettings>("/api/agent/settings")
+}
+
+export function putAgentSettings(settings: AgentSettings): Promise<AgentSettings> {
+  return api.put<AgentSettings>("/api/agent/settings", settings)
 }
 
 /**

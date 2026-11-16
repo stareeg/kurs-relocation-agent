@@ -242,9 +242,18 @@ class AgentRunsManager:
         self._deps_factory = factory
 
     async def start_run(
-        self, *, account_id: int, goal: str, session_id: int | None = None
+        self,
+        *,
+        account_id: int,
+        goal: str,
+        session_id: int | None = None,
+        auto_confirm: bool = False,
     ) -> AgentRunRecord:
-        """Создать строку и поднять задачу запуска. Живёт после отключения клиента."""
+        """Создать строку и поднять задачу запуска. Живёт после отключения клиента.
+
+        `auto_confirm` — режим «подтверждать автоматически» (OQ-8): кладётся в состояние
+        на старте и действует на весь запуск, переключатель влияет на следующие запуски.
+        """
         record = await self._store.create_run(
             account_id=account_id,
             goal=goal,
@@ -260,18 +269,32 @@ class AgentRunsManager:
         )
         self._live[record.id] = live
         live.task = asyncio.create_task(
-            self._run_loop(live, initial={"goal": goal}), name=f"agent-run-{record.id}"
+            self._run_loop(live, initial={"goal": goal, "auto_confirm": auto_confirm}),
+            name=f"agent-run-{record.id}",
         )
         return record
 
-    async def approve(self, *, run_id: int, account_id: int, approved: bool) -> AgentRunRecord:
-        """Решение человека по паузе. Живая задача — очередь; после рестарта — резюм с чекпойнта."""
+    async def approve(
+        self,
+        *,
+        run_id: int,
+        account_id: int,
+        approved: bool,
+        edits: dict[str, Any] | None = None,
+    ) -> AgentRunRecord:
+        """Решение человека по паузе. Живая задача — очередь; после рестарта — резюм с чекпойнта.
+
+        `edits` — правка карточки перед «да» (текст письма); какие поля можно править,
+        решает узел `confirm` (`EDITABLE_PARAMS`), остальное он молча отбросит.
+        """
         record = await self._store.get_run(run_id, account_id=account_id)
         if record is None:
             raise NotFound(f"запуск {run_id} не найден")
         if record.status != "waiting_approval":
             raise InvalidInput(f"запуск {run_id} не ждёт подтверждения (статус {record.status})")
-        decision = {"approved": approved}
+        decision: dict[str, Any] = {"approved": approved}
+        if approved and edits:
+            decision["edits"] = dict(edits)
         live = self._live.get(run_id)
         if live is not None:
             live.decisions.put_nowait(decision)
@@ -366,7 +389,15 @@ class AgentRunsManager:
                     live.run_id, account_id=live.account_id, status="running"
                 )
                 live.status = "running"
-                pump.emit(AgentEvent(type="run_started", payload={"goal": live.goal}))
+                pump.emit(
+                    AgentEvent(
+                        type="run_started",
+                        payload={
+                            "goal": live.goal,
+                            "auto_confirm": bool(initial.get("auto_confirm")),
+                        },
+                    )
+                )
             else:
                 await self._seed_budget(graph, config, budget)
                 await self._store.update_run(
@@ -394,7 +425,13 @@ class AgentRunsManager:
                     live.run_id, account_id=live.account_id, status="running"
                 )
                 live.status = "running"
-                pump.emit(AgentEvent(type="confirmation_resolved", payload={"approved": approved}))
+                edited = sorted((decision.get("edits") or {}).keys()) if approved else []
+                pump.emit(
+                    AgentEvent(
+                        type="confirmation_resolved",
+                        payload={"approved": approved, "edited": edited},
+                    )
+                )
                 payload = Command(resume=decision)
             answer = final.get("answer")
             await self._store.update_run(

@@ -117,7 +117,15 @@ const LINK_RE = /^\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)$/
 const LINK_CLS =
   "font-medium text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-800"
 
-function renderPlain(text: string, key: number): ReactNode {
+/**
+ * Цитата «…» в тексте → обработчик клика или null (цитату не нашли в источнике — остаётся
+ * текстом). Так ответ агента ведёт к месту в тексте вакансии (U-1, PLAN 3.2).
+ */
+export type QuoteAction = (quote: string) => (() => void) | null
+
+const QUOTE_RE = /(«[^«»\n]{8,400}»)/g
+
+function renderUrls(text: string, key: number | string): ReactNode {
   if (!/https?:\/\//.test(text)) return <Fragment key={key}>{text}</Fragment>
   return (
     <Fragment key={key}>
@@ -134,7 +142,30 @@ function renderPlain(text: string, key: number): ReactNode {
   )
 }
 
-function renderInline(text: string): ReactNode {
+function renderPlain(text: string, key: number, quoteAction?: QuoteAction): ReactNode {
+  if (!quoteAction || !text.includes("«")) return renderUrls(text, key)
+  return (
+    <Fragment key={key}>
+      {text.split(QUOTE_RE).map((part, j) => {
+        const onClick = part.startsWith("«") && part.endsWith("»") ? quoteAction(part.slice(1, -1)) : null
+        if (!onClick) return renderUrls(part, j)
+        return (
+          <button
+            key={j}
+            type="button"
+            className="rounded-sm text-left underline decoration-slate-400 decoration-dotted underline-offset-4 transition-colors hover:bg-amber-100/70 hover:decoration-slate-600"
+            title="Показать в тексте вакансии"
+            onClick={onClick}
+          >
+            {part}
+          </button>
+        )
+      })}
+    </Fragment>
+  )
+}
+
+function renderInline(text: string, quoteAction?: QuoteAction): ReactNode {
   const parts = text.split(INLINE_RE)
   return parts.map((part, i) => {
     if (!part) return null
@@ -173,7 +204,7 @@ function renderInline(text: string): ReactNode {
     if (part.startsWith("$") && part.endsWith("$") && part.length > 2) {
       return <InlineMath key={i} tex={part.slice(1, -1)} />
     }
-    return renderPlain(part, i)
+    return renderPlain(part, i, quoteAction)
   })
 }
 
@@ -291,8 +322,18 @@ function buildBlocks(md: string): Block[] {
 }
 
 // `chat`: вариант под пузыри чата (крупнее, чёрный текст) вместо приглушённого текста вкладок.
-export function MarkdownView({ markdown, chat = false }: { markdown: string; chat?: boolean }) {
+// `quoteAction`: цитаты «…» кликабельны, если обработчик вернул действие (ответ агента, U-1).
+export function MarkdownView({
+  markdown,
+  chat = false,
+  quoteAction,
+}: {
+  markdown: string
+  chat?: boolean
+  quoteAction?: QuoteAction
+}) {
   const blocks = useMemo(() => buildBlocks(markdown), [markdown])
+  const inline = (text: string) => renderInline(text, quoteAction)
   const pCls = chat
     ? "text-base leading-snug text-foreground"
     : "text-sm leading-relaxed text-muted-foreground"
@@ -304,32 +345,32 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
         if (b.kind === "h1")
           return (
             <h1 key={i} className="text-xl font-semibold text-foreground">
-              {renderInline(b.text)}
+              {inline(b.text)}
             </h1>
           )
         if (b.kind === "h2")
           return (
             <h2 key={i} className="mt-6 text-base font-semibold text-foreground">
-              {renderInline(b.text)}
+              {inline(b.text)}
             </h2>
           )
         if (b.kind === "h3")
           return (
             <h3 key={i} className="mt-4 text-sm font-semibold text-foreground">
-              {renderInline(b.text)}
+              {inline(b.text)}
             </h3>
           )
         if (b.kind === "h4")
           return (
             <h4 key={i} className="mt-3 text-sm font-semibold text-foreground">
-              {renderInline(b.text)}
+              {inline(b.text)}
             </h4>
           )
         if (b.kind === "ul" || b.kind === "ol") {
           const cls = `${b.kind === "ul" ? "list-disc" : "list-decimal"} space-y-1 pl-5 ${liBase}`
           const items = b.items.map((it, j) => (
             <li key={j} className={it.depth === 1 ? "ml-5" : it.depth === 2 ? "ml-10" : undefined}>
-              {renderInline(it.text)}
+              {inline(it.text)}
             </li>
           ))
           return b.kind === "ul" ? (
@@ -353,7 +394,7 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
                         key={j}
                         className="border-b border-border px-3 py-2 text-left font-semibold text-foreground"
                       >
-                        {renderInline(cell)}
+                        {inline(cell)}
                       </th>
                     ))}
                   </tr>
@@ -363,7 +404,7 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
                     <tr key={r} className="border-b border-border last:border-b-0">
                       {b.head.map((_, j) => (
                         <td key={j} className="px-3 py-2 align-top text-foreground">
-                          {renderInline(row[j] ?? "")}
+                          {inline(row[j] ?? "")}
                         </td>
                       ))}
                     </tr>
@@ -379,7 +420,7 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
               key={i}
               className={`whitespace-pre-line border-l-2 border-border pl-3 ${chat ? "text-base" : "text-sm"} text-muted-foreground`}
             >
-              {renderInline(b.text)}
+              {inline(b.text)}
             </blockquote>
           )
         if (b.kind === "code")
@@ -391,7 +432,7 @@ export function MarkdownView({ markdown, chat = false }: { markdown: string; cha
         if (b.kind === "mathblock") return <MathBlock key={i} tex={b.tex} />
         return (
           <p key={i} className={pCls}>
-            {renderInline("text" in b ? b.text : "")}
+            {inline("text" in b ? b.text : "")}
           </p>
         )
       })}

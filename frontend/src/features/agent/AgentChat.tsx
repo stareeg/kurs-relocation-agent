@@ -20,10 +20,12 @@ import { linkify } from "@/components/chat/linkify"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { MarkdownView } from "@/components/markdown-view"
 import { usePersistedBoolean } from "@/lib/use-persisted-boolean"
 import { useMediaQuery } from "@/lib/use-media-query"
-import { appendAgentChatMessage, createAgentChat } from "@/api/agent"
+import { appendAgentChatMessage, createAgentChat, type AgentConfirmMode } from "@/api/agent"
 import type { Job } from "@/api/jobs"
 import { JobDetailDrawer } from "@/features/jobs/JobDetailDrawer"
 import { useJobs } from "@/features/jobs/use-jobs"
@@ -35,12 +37,23 @@ import { AgentWorkPanel } from "./AgentWorkPanel"
 import type { VacancyRef } from "./run-summary"
 import { useAgentConversation, type AgentChatMessage } from "./use-agent-conversation"
 import { useAgentRuns, type RunView } from "./use-agent-runs"
+import { useAgentSettings } from "./use-agent-settings"
 
 const MIGRATED_KEY = "copilot.agent-chat.migrated-v2"
 /** Панель «Ход работы» открыта/свёрнута на широком экране — переживает перезагрузку. */
 const PANEL_KEY = "copilot.agent.work-panel"
 /** С этой ширины панель стоит колонкой справа, уже — открывается шторкой. */
 const WIDE_QUERY = "(min-width: 1024px)"
+
+// Режим подтверждения действий (OQ-8) у поля ввода — как переключатель автономности в COWORK.
+const CONFIRM_OPTIONS = [
+  { value: "ask", label: "Спрашивать", title: "Отклик уходит в очередь только после вашего «да»" },
+  {
+    value: "auto",
+    label: "Автоматически",
+    title: "Агент ставит отклик в очередь без вопроса; действует на новые запуски",
+  },
+] as const satisfies readonly { value: AgentConfirmMode; label: string; title: string }[]
 
 // Цели для быстрого старта: обычный сценарий, сценарий с ошибкой инструмента
 // (вакансии с таким id нет — агент должен заметить ошибку и найти замену) и действие
@@ -118,6 +131,9 @@ export function AgentChat() {
   const jobsQuery = useJobs()
   const jobs = jobsQuery.data
   const [openJob, setOpenJob] = useState<Job | null>(null)
+  const [openQuote, setOpenQuote] = useState<string | null>(null)
+  const confirm = useAgentSettings()
+  const [askAuto, setAskAuto] = useState(false)
   const resumeQuery = useResumeData()
   // Пустые состояния с действием (U-0): агенту не с чем работать без резюме и вакансий.
   const resume = resumeQuery.data
@@ -168,19 +184,21 @@ export function AgentChat() {
           title: job.title,
           company: job.company ?? null,
           score: job.overall_score ?? null,
+          text: job.vacancy_text ?? null,
         })
       }
     }
     return map
   }, [jobs])
 
-  function openVacancy(vacancyId: string) {
+  function openVacancy(vacancyId: string, quote?: string) {
     const job = (jobs ?? []).find((j) => j?.vacancy_id === vacancyId)
     if (!job) {
       toast.error("Вакансии нет в базе аккаунта")
       return
     }
     setSheetOpen(false)
+    setOpenQuote(quote ?? null)
     setOpenJob(job)
   }
 
@@ -389,9 +407,9 @@ export function AgentChat() {
                       onOpenVacancy={openVacancy}
                       onRetry={retryRun}
                       retryDisabled={runs.hasActive}
-                      onApprove={(runId, approved) => {
+                      onApprove={(runId, approved, edits) => {
                         pinned.current = true
-                        void runs.approve(runId, approved).catch(() =>
+                        void runs.approve(runId, approved, edits).catch(() =>
                           toast.error("Не удалось передать решение"),
                         )
                       }}
@@ -493,8 +511,22 @@ export function AgentChat() {
                   }
                 }}
               />
-              <div className="flex items-center justify-end gap-3">
-                <span className="hidden text-xs text-muted-foreground md:inline">
+              <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="hidden text-xs text-muted-foreground sm:inline">Отклик:</span>
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="Подтверждение отклика"
+                    options={CONFIRM_OPTIONS}
+                    value={confirm.mode}
+                    onChange={(next) => {
+                      if (next === confirm.mode) return
+                      if (next === "auto") setAskAuto(true)
+                      else confirm.setMode("ask")
+                    }}
+                  />
+                </div>
+                <span className="ml-auto hidden text-xs text-muted-foreground md:inline">
                   Enter — отправить, Shift+Enter — новая строка
                 </span>
                 <Button
@@ -568,9 +600,19 @@ export function AgentChat() {
 
       <JobDetailDrawer
         job={openJob}
+        quote={openQuote}
         onOpenChange={(open) => {
           if (!open) setOpenJob(null)
         }}
+      />
+
+      <ConfirmDialog
+        open={askAuto}
+        onOpenChange={setAskAuto}
+        title="Подтверждать отклики автоматически?"
+        description="Агент будет ставить отклики в очередь автооткликов без вашего «да». Режим действует на новые запуски; вернуть «Спрашивать» можно в любой момент."
+        confirmLabel="Включить"
+        onConfirm={() => confirm.setMode("auto")}
       />
     </div>
   )

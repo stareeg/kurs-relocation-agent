@@ -7,6 +7,7 @@ import {
   startAgentRun,
   streamAgentRunEvents,
   type AgentActionCard,
+  type AgentApprovalEdits,
   type AgentEvent,
   type AgentRun,
   type AgentRunStatus,
@@ -274,8 +275,9 @@ export function useAgentRuns(sessionId: number | null) {
     }
   }, [sessionId])
 
-  const approve = useCallback(async (runId: number, approved: boolean): Promise<void> => {
-    await approveAgentRun(runId, approved)
+  const approve = useCallback(
+    async (runId: number, approved: boolean, edits?: AgentApprovalEdits): Promise<void> => {
+    await approveAgentRun(runId, approved, edits)
     // Оптимистично снимаем карточку: live-стрим подтвердит статус.
     setRuns((cur) =>
       cur.map((r) =>
@@ -284,7 +286,9 @@ export function useAgentRuns(sessionId: number | null) {
           : r,
       ),
     )
-  }, [])
+    },
+    [],
+  )
 
   const hasActive = useMemo(
     () => runs.some((r) => !TERMINAL.includes(r.status)),

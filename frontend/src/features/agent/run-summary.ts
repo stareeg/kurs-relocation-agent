@@ -100,8 +100,13 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many
 }
 
-/** Вакансия из базы аккаунта: название вместо id, балл продукта, карточка по клику. */
-export type VacancyRef = { title: string; company: string | null; score?: number | null }
+/** Вакансия из базы аккаунта: название вместо id, балл продукта, текст для цитат, карточка по клику. */
+export type VacancyRef = {
+  title: string
+  company: string | null
+  score?: number | null
+  text?: string | null
+}
 
 export function vacancyName(v: VacancyRef): string {
   return v.company ? `${v.title} · ${v.company}` : v.title
@@ -171,12 +176,22 @@ function toLogRow(ev: AgentEvent): LogRow | null {
     }
     case "needs_confirmation":
       return { id: ev.id, kind: "info", title: "Действие ждёт подтверждения человека" }
-    case "confirmation_resolved":
+    case "confirmation_resolved": {
+      if (p.auto === true) {
+        return { id: ev.id, kind: "check", title: "Действие подтверждено автоматически" }
+      }
+      const edited = Array.isArray(p.edited) && p.edited.length > 0
       return {
         id: ev.id,
         kind: p.approved === true ? "check" : "info",
-        title: p.approved === true ? "Человек подтвердил действие" : "Человек отклонил действие",
+        title:
+          p.approved !== true
+            ? "Человек отклонил действие"
+            : edited
+              ? "Человек подтвердил действие с правкой текста"
+              : "Человек подтвердил действие",
       }
+    }
     case "failed":
       return { id: ev.id, kind: "tool-error", title: "Запуск упал", detail: typeof p.error === "string" ? p.error : undefined }
     default:
@@ -269,6 +284,10 @@ export type RunSummary = {
   runScores: Map<string, number>
   /** Склейка payload инструментов и наблюдений — по ней ищем упомянутые вакансии. */
   mentions: string
+  /** Действия, ушедшие без вопроса в режиме «подтверждать автоматически» (OQ-8). */
+  autoActions: { id: number; action: string; params: Record<string, unknown> }[]
+  /** Запуск стартовал в режиме «подтверждать автоматически». */
+  autoConfirm: boolean
 }
 
 const SCORE_RE = /"vacancy_id":\s*"([^"]+)",\s*"overall_score":\s*(-?\d+(?:\.\d+)?)/
@@ -279,6 +298,8 @@ export function summarize(events: AgentEvent[]): RunSummary {
   const tools = new Map<string, ToolStat>()
   const runScores = new Map<string, number>()
   const mentionParts: string[] = []
+  const autoActions: RunSummary["autoActions"] = []
+  let autoConfirm = false
   let actions = 0
   let stepsTaken = 0
   let toolErrors = 0
@@ -287,6 +308,7 @@ export function summarize(events: AgentEvent[]): RunSummary {
 
   for (const ev of events) {
     const p = ev.payload
+    if (ev.type === "run_started" && p.auto_confirm === true) autoConfirm = true
     if (ev.type === "step_started") {
       stepsTaken += 1
       currentStepId = String(p.step_id ?? "")
@@ -329,6 +351,18 @@ export function summarize(events: AgentEvent[]): RunSummary {
         if (m) runScores.set(m[1], Number(m[2]))
       }
     }
+    if (ev.type === "confirmation_resolved" && p.auto === true) {
+      const card = (p.card ?? {}) as { action?: unknown; params?: unknown }
+      autoActions.push({
+        id: ev.id,
+        action: String(card.action ?? ""),
+        params: (card.params && typeof card.params === "object" ? card.params : {}) as Record<
+          string,
+          unknown
+        >,
+      })
+      mentionParts.push(JSON.stringify(card.params ?? {}))
+    }
     if (ev.type === "judge_verdict" && p.level !== "step") {
       finalVerdict = {
         verdict: String(p.verdict ?? ""),
@@ -347,6 +381,8 @@ export function summarize(events: AgentEvent[]): RunSummary {
     finalVerdict,
     runScores,
     mentions: mentionParts.join("\n"),
+    autoActions,
+    autoConfirm,
   }
 }
 
@@ -408,4 +444,43 @@ export function runVacancies(
     })
   }
   return out
+}
+
+// ---------------------------------------------------------------- цитаты
+
+/** Нормализация для сверки цитаты с текстом: регистр, «ё», пробелы (как сверка цитат судьёй). */
+export function normalizeQuote(text: string): string {
+  return text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim()
+}
+
+/**
+ * В тексте какой вакансии стоит цитата из ответа: сначала вакансии запуска, потом вся база.
+ * Короче 8 знаков — не цитата (тот же порог, что у проверки цитат кодом в судье).
+ */
+export function findQuoteVacancy(
+  quote: string,
+  vacancies: Map<string, VacancyRef> | undefined,
+  preferred: string[] = [],
+): string | null {
+  const needle = normalizeQuote(quote)
+  if (needle.length < 8 || !vacancies) return null
+  const order = [...preferred, ...[...vacancies.keys()].filter((id) => !preferred.includes(id))]
+  for (const id of order) {
+    const text = vacancies.get(id)?.text
+    if (text && normalizedText(text).includes(needle)) return id
+  }
+  return null
+}
+
+// Тексты вакансий длинные, а ответ перерисовывается: нормализуем каждый текст один раз.
+const NORMALIZED = new Map<string, string>()
+
+function normalizedText(text: string): string {
+  let hit = NORMALIZED.get(text)
+  if (hit === undefined) {
+    if (NORMALIZED.size > 300) NORMALIZED.clear()
+    hit = normalizeQuote(text)
+    NORMALIZED.set(text, hit)
+  }
+  return hit
 }
