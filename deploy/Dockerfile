@@ -41,9 +41,6 @@ RUN uv sync --frozen --no-dev
 COPY core/ core/
 COPY api/ api/
 COPY bot_app/ bot_app/
-# Контракты ДЗ1 (`agent/`) нужны в образе: `core/app/agent` реиспользует их (A-1).
-# Временно до A-2, когда инструменты переедут в core и слой ДЗ1 удалится.
-COPY agent/ agent/
 
 # Промпты: пути в core/domains/*/llm.py резолвятся относительно CWD (/app) в рантайме, не только
 # на этапе сборки — без этого слоя каждый LLM-вызов падает FileNotFoundError (был баг, .dockerignore

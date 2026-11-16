@@ -1,20 +1,27 @@
-"""Контракты инструментов и данные, которые ходят через цикл.
+"""Контракты инструментов агента курса (перенос из ДЗ1, A-2).
 
 Восемь полей контракта (требование семинара): имя, описание, аргументы, что не от модели,
 результат, ошибки, тип (чтение/действие), отказ. Здесь они разложены по классам: `Tool`
 описывает первые три и последние три, `ToolContext` — то, что код знает сам, `ToolError` —
 формат ошибки.
+
+Отличия от ДЗ1: `Tool.fn` — async (реальные инструменты ходят в домены и БД), а
+`ToolContext` вместо демо-строк несёт `account_id` запроса и опциональный `db`
+(Executor пула) — в проде `None`, домены сами открывают пул; в тестах подставляется
+двойник. Гражданство останется в контексте для инструмента правил страны (K-1).
 """
 
 from __future__ import annotations
 
 import json
-from collections import Counter, deque
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel
+
+from core.platform.db.pool import Executor
 
 
 class ToolError(BaseModel):
@@ -35,16 +42,17 @@ class ConfirmationCard:
 
 @dataclass(slots=True)
 class ToolContext:
-    """То, что код знает сам и модель выбирать не должна (сессия клиента, права, сбои)."""
+    """То, что код знает сам и модель выбирать не должна: аккаунт, БД, сбои, подтверждения."""
 
-    applicant_id: str = "applicant_demo"
-    citizenship: str = "RU"
+    account_id: int = 1
+    db: Executor | None = None  # прод: None (домены сами открывают пул), тесты: двойник
+    citizenship: str = "RU"  # для инструмента правил страны (K-1); берётся из профиля, не у модели
     faults: dict[str, deque[str]] = field(default_factory=dict)
-    confirm: Callable[[ConfirmationCard], bool] | None = None
+    confirm: Callable[[ConfirmationCard], Awaitable[bool] | bool] | None = None
     submissions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def take_fault(self, tool: str) -> str | None:
-        """Запланированный сбой для демо: «инструмент вернул ошибку» без сети."""
+        """Запланированный сбой для тестов: «инструмент вернул ошибку» без сети."""
         queue = self.faults.get(tool)
         return queue.popleft() if queue else None
 
@@ -64,7 +72,7 @@ class Tool:
     description: str
     args_model: type[BaseModel]
     kind: Literal["read", "action"]
-    fn: Callable[[BaseModel, ToolContext], dict[str, Any]]
+    fn: Callable[[BaseModel, ToolContext], Awaitable[dict[str, Any]]]
     requires_confirmation: bool = False
 
     def schema(self) -> dict[str, Any]:
@@ -80,42 +88,6 @@ class Tool:
         }
 
 
-@dataclass(slots=True)
-class Step:
-    """Одна запись журнала: что предложила модель, чем это кончилось, кто подтвердил."""
-
-    index: int
-    tool: str
-    args: dict[str, Any]
-    result: dict[str, Any]
-    error: ToolError | None = None
-    confirmed_by: str | None = None
-
-    def as_log(self) -> dict[str, Any]:
-        return {
-            "step": self.index,
-            "tool": self.tool,
-            "args": self.args,
-            "error": self.error.type if self.error else None,
-            "confirmed_by": self.confirmed_by,
-        }
-
-
-@dataclass(slots=True)
-class AgentRun:
-    """Итог прогона: ответ, журнал шагов, потраченные токены и причина остановки."""
-
-    answer: str | None
-    steps: list[Step]
-    stop_reason: Literal["answered", "step_limit", "loop_guard", "operator"]
-    tokens_in: int = 0
-    tokens_out: int = 0
-    seen_calls: Counter[str] = field(default_factory=Counter)
-
-    def trace(self) -> list[dict[str, Any]]:
-        return [step.as_log() for step in self.steps]
-
-
 def error_payload(error: ToolError) -> dict[str, Any]:
     """Единый вид ошибки для контекста модели."""
     return {"error": error.model_dump()}
@@ -125,3 +97,14 @@ def short(value: dict[str, Any], limit: int = 400) -> str:
     """Не кладём в журнал длинные результаты целиком."""
     text = json.dumps(value, ensure_ascii=False)
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+__all__ = [
+    "ConfirmationCard",
+    "Tool",
+    "ToolCall",
+    "ToolContext",
+    "ToolError",
+    "error_payload",
+    "short",
+]

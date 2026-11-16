@@ -1,8 +1,8 @@
-"""A-1: каркас агента на deepagents — переходы графа, пределы, честный частичный итог.
+"""A-1 каркас + A-2 инструменты поверх продукта: переходы графа, пределы, честный частичный итог.
 
 Живых моделей нет: планировщик/перестройка — `ScriptedChatModel` с JSON в ответе,
 исполнитель — тот же фейк с tool_calls (deepagents крутит свой цикл, инструменты
-выполняются по контрактам из `agent/`).
+выполняются по контрактам из `core/app/agent` на демо-данных `FakeDemoDb`).
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 
+from core.app.agent.contracts import ToolContext
 from core.app.agent.graph import (
     AgentDeps,
     build_agent_graph,
@@ -35,10 +36,16 @@ from core.app.agent.state import (
     first_todo_step,
     render_plan,
 )
-from core.app.agent.tools import StepRecorder, build_run_context, to_langchain_tools
-from agent.contracts import ToolContext
-from agent.tools import TOOLS
-from tests.fakes import ScriptedChatModel
+from core.app.agent.tools import (
+    TOOLS,
+    StepRecorder,
+    build_run_context,
+    ensure_tools_registered,
+    to_langchain_tools,
+)
+from tests.fakes import FakeDemoDb, ScriptedChatModel
+
+ensure_tools_registered()
 
 GOAL = "Найди вакансию backend в Польше и скажи, какие условия въезда"
 
@@ -66,7 +73,7 @@ def _deps(
         replanner=replanner,
         limits=limits or RunLimits(),
         tools=TOOLS,
-        tool_context=ToolContext(),
+        tool_context=ToolContext(account_id=1, db=FakeDemoDb()),
     )
 
 
@@ -99,15 +106,15 @@ def _state_with(plan: list[PlanStep], **overrides: Any) -> AgentState:
 # ------------------------------------------------------------------- счастливый путь
 
 
-async def test_goal_passes_on_stub_tools():
-    """Цель проходит на заглушках инструментов: план → шаг → перестройка finish → ответ."""
+async def test_goal_passes_on_product_tools():
+    """Цель проходит на инструментах продукта (демо-данные): план → шаг → finish → ответ."""
     planner = ScriptedChatModel(
         responses=[
             AIMessage(
                 content=json.dumps(
                     _plan_spec(
-                        ("s1", "Найти вакансии backend в Польше", "список вакансий из поиска"),
-                        ("s2", "Проверить правила въезда", "правила страны из country_rules"),
+                        ("s1", "Найти вакансии backend", "список вакансий из поиска"),
+                        ("s2", "Проверить условия найма", "условия с цитатами"),
                     )
                 )
             )
@@ -117,9 +124,9 @@ async def test_goal_passes_on_stub_tools():
         responses=[
             AIMessage(
                 content="",
-                tool_calls=[{"name": "search_vacancies", "args": {"role": "backend", "country": "Польша"}, "id": "c1"}],
+                tool_calls=[{"name": "search_vacancies", "args": {"query": "kestrel"}, "id": "c1"}],
             ),
-            AIMessage(content="Нашёл 3 вакансии backend в Польше."),
+            AIMessage(content="Нашёл вакансию Applied AI Engineer в Kestrel Analytics."),
         ]
     )
     replanner = ScriptedChatModel(responses=[AIMessage(content=json.dumps(_replan_spec("finish")))])
@@ -127,11 +134,11 @@ async def test_goal_passes_on_stub_tools():
     state = await run_agent_goal(GOAL, deps=_deps(planner, executor, replanner))
 
     assert state["stop_reason"] == "answered"
-    assert state["answer"] and "3 вакансии" in str(state["answer"])
+    assert state["answer"] and "Kestrel" in str(state["answer"])
     assert state["steps_taken"] == 1
     assert state["plan"][0].status == "done"
     assert state["vacancies"], "вакансии из результата поиска попали в состояние"
-    assert all(v["id"].startswith("v") for v in state["vacancies"])
+    assert all(v["id"].startswith("demo-") for v in state["vacancies"]), "id из собранной базы"
     assert state["model_calls"] >= 3, "планировщик, шаг, перестройка посчитаны бюджетом"
     assert not state.get("error")
 
@@ -142,7 +149,9 @@ async def test_executor_sees_only_domain_tools():
     recorder = StepRecorder("s1", 1)
     agent = build_step_agent(
         model=executor,
-        tools=to_langchain_tools(TOOLS, ToolContext(), recorder),
+        tools=to_langchain_tools(
+            TOOLS, ToolContext(account_id=1, db=FakeDemoDb()), recorder
+        ),
         system_prompt="тест",
     )
     await agent.ainvoke({"messages": [("user", "тест")]})
@@ -216,7 +225,7 @@ async def test_step_limit_gives_honest_partial():
                 content=json.dumps(
                     _plan_spec(
                         ("s1", "Найти вакансии", "список"),
-                        ("s2", "Проверить правила", "правила"),
+                        ("s2", "Проверить условия найма", "условия"),
                         ("s3", "Ещё шаг", "критерий"),
                     )
                 )
@@ -226,14 +235,14 @@ async def test_step_limit_gives_honest_partial():
     # Каждый шаг: вызов инструмента + текст; шаги только s1/s2 успеют при max_steps=2.
     executor = ScriptedChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "country_rules", "args": {"country": "Польша"}, "id": "c1"}]),
-            AIMessage(content="Правила получены."),
+            AIMessage(content="", tool_calls=[{"name": "read_profile", "args": {}, "id": "c1"}]),
+            AIMessage(content="Профиль получен."),
         ]
     )
     replanner = ScriptedChatModel(
         responses=[AIMessage(content=json.dumps(_replan_spec("continue", [
             {"id": "s1", "title": "Найти вакансии", "done_criteria": "список", "status": "done"},
-            {"id": "s2", "title": "Проверить правила", "done_criteria": "правила", "status": "done"},
+            {"id": "s2", "title": "Проверить условия найма", "done_criteria": "условия", "status": "done"},
             {"id": "s3", "title": "Ещё шаг", "done_criteria": "критерий", "status": "todo"},
         ])))]
     )
@@ -244,7 +253,7 @@ async def test_step_limit_gives_honest_partial():
     assert state.get("plan_changes"), "перестройка продолжает — пишет «было/стало»"
     answer = str(state["answer"])
     assert "Не удалось закончить цель" in answer
-    assert "Проверить правила" in answer, "закрытые шаги перечислены как «что удалось»"
+    assert "Проверить условия найма" in answer, "закрытые шаги перечислены как «что удалось»"
     assert "Ещё шаг" in answer, "незакрытые шаги перечислены как «что осталось»"
 
 
@@ -255,7 +264,7 @@ async def test_model_budget_stops_run():
     )
     executor = ScriptedChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {"role": "backend"}, "id": "c1"}]),
+            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]),
             AIMessage(content="Есть варианты."),
         ]
     )
@@ -286,12 +295,12 @@ def test_apply_replan_by_id():
     ]
     updates = [
         {"id": "s1", "title": "поиск", "done_criteria": "список", "status": "todo"},
-        {"id": "s2", "title": "правила Польши", "done_criteria": "правила", "status": "todo"},
+        {"id": "s2", "title": "условия найма Kestrel", "done_criteria": "правила", "status": "todo"},
         {"id": "s3", "title": "сравнить", "done_criteria": "таблица", "status": "todo"},
     ]
     after = apply_replan(plan, updates)
     assert [s.status for s in after if s.id == "s1"] == ["done"], "закрытый шаг не откатывается"
-    assert [s.title for s in after if s.id == "s2"] == ["правила Польши"]
+    assert [s.title for s in after if s.id == "s2"] == ["условия найма Kestrel"]
     assert [s.status for s in after if s.id == "s2"] == ["todo"]
     assert [s.id for s in after if s.id == "s3"] == ["s3"]
 
@@ -304,7 +313,7 @@ async def test_rebuild_goes_back_to_planner():
                 content=json.dumps(
                     _plan_spec(
                         ("s1", "Найти вакансии", "список"),
-                        ("s2", "Откликнуться на v01", "отклик в очереди"),
+                        ("s2", "Откликнуться на demo-101", "отклик в очереди"),
                     )
                 )
             ),
@@ -312,7 +321,7 @@ async def test_rebuild_goes_back_to_planner():
                 content=json.dumps(
                     _plan_spec(
                         ("s1", "Найти вакансии", "список"),
-                        ("s2", "Проверить правила Польши", "правила"),
+                        ("s2", "Проверить условия найма", "условия"),
                     )
                 )
             ),
@@ -320,13 +329,13 @@ async def test_rebuild_goes_back_to_planner():
     )
     # Шаг s2 (отклик) не подтверждён человеком → cancelled → чек считает это ошибкой? Нет:
     # cancelled — это не ошибка инструмента, а ожидание человека. Пусть шаг «упадёт»:
-    # модель делает вызов submit, получает «cancelled», перестройка говорит rebuild.
+    # модель делает вызов queue_application, получает «cancelled», перестройка говорит rebuild.
     executor = ScriptedChatModel(
         responses=[
             AIMessage(
                 content="",
                 tool_calls=[
-                    {"name": "submit_application", "args": {"vacancy_id": "v01", "cover_note": "Здравствуйте! Готов обсудить позицию backend."}, "id": "c1"}
+                    {"name": "queue_application", "args": {"vacancy_id": "demo-101", "cover_note": "Здравствуйте! Готов обсудить позицию backend."}, "id": "c1"}
                 ],
             ),
             AIMessage(content="Действие ждёт подтверждения."),
@@ -341,7 +350,7 @@ async def test_rebuild_goes_back_to_planner():
     state = await run_agent_goal(GOAL, deps=_deps(planner, executor, replanner))
 
     assert state["replans_used"] >= 1
-    assert state["plan"][1].title == "Проверить правила Польши", "план пересобран"
+    assert state["plan"][1].title == "Проверить условия найма", "план пересобран"
     assert state["stop_reason"] == "answered"
     assert state.get("pending_action"), "карточка неподтверждённого действия в состоянии"
 
@@ -356,7 +365,7 @@ async def test_memory_checkpointer_keeps_state():
     )
     executor = ScriptedChatModel(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {"role": "backend"}, "id": "c1"}]),
+            AIMessage(content="", tool_calls=[{"name": "search_vacancies", "args": {}, "id": "c1"}]),
             AIMessage(content="Есть варианты."),
         ]
     )

@@ -22,8 +22,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from agent.contracts import Tool, ToolContext
 from core.app.agent.budget import RunBudget, put_budget
+from core.app.agent.contracts import Tool, ToolContext
 from core.app.agent.executor import step_node
 from core.app.agent.planner import planner_node
 from core.app.agent.replanner import replan_node
@@ -53,23 +53,29 @@ class AgentDeps:
     tool_context: ToolContext = field(default_factory=ToolContext)
 
 
-def default_deps() -> AgentDeps:
-    """Депенденси по умолчанию: модели по декларациям реестра, инструменты ДЗ1."""
-    from agent.tools import TOOLS
+def default_deps(account_id: int = 1) -> AgentDeps:
+    """Депенденси по умолчанию: модели по декларациям реестра, инструменты продукта (A-2).
+
+    `account_id` — аккаунт запроса (в A-3 его передаст API из сессии); по умолчанию
+    демо-аккаунт. БД инструментов не передаётся: домены сами открывают пул.
+    """
     from core.app.agent.llm import (
         AGENT_PLAN,
         AGENT_REPLAN,
         AGENT_STEP,
         ensure_agent_features_registered,
     )
+    from core.app.agent.tools import TOOLS, ensure_tools_registered
     from core.platform.llm.registry import chat_model_for
 
     ensure_agent_features_registered()
+    ensure_tools_registered()
     return AgentDeps(
         planner=chat_model_for(AGENT_PLAN, temperature=0.2),
         executor=chat_model_for(AGENT_STEP, temperature=0.2),
         replanner=chat_model_for(AGENT_REPLAN, temperature=0.2),
         tools=TOOLS,
+        tool_context=ToolContext(account_id=account_id),
     )
 
 

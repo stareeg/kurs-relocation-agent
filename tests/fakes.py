@@ -204,10 +204,303 @@ def use_fake_llm(monkeypatch, llm: FakeLlm) -> FakeLlm:
 
 
 __all__ = [
+    "DEMO_JOBS",
+    "DEMO_RESUME",
     "FakeChannel",
+    "FakeDemoDb",
     "FakeLlm",
     "FakeVacancySource",
     "RaisingLlm",
     "ScriptedChatModel",
     "use_fake_llm",
 ]
+
+
+# ------------------------------------------------------------------ демо-данные (A-2)
+
+_DEMO_V100_TEXT = (
+    "Senior LLM Engineer (Agents) в Northwind Labs. Агентные пайплайны на проде, найм через "
+    "EOR, оплата в евро. Удалённо из любой точки мира, пересечение с CET не требуется."
+)
+_DEMO_V102_TEXT = (
+    "Applied AI Engineer в Kestrel Analytics. Удалённо из любой точки мира, но нужен ВНЖ ЕС "
+    "или право работать в ЕС. Оплата €90 000–110 000 в год, B2B-контракт. Пересечение с "
+    "командой CET минимум 4 часа в день."
+)
+_DEMO_V104_TEXT = (
+    "Lead AI Engineer в Brightmoor Health. Хорошие деньги, но гибрид в Амстердаме: "
+    "потребуется релокация. Оплата €8 000 в месяц."
+)
+_DEMO_V106_TEXT = (
+    "NLP Engineer в Halden Robotics. Только офис в Осло: блокер для удалёнки, переезд без "
+    "помощи компании. Оплата NOK 75 000 в месяц."
+)
+
+DEMO_JOBS: list[dict[str, Any]] = [
+    {
+        "id": 101,
+        "vacancy_id": "demo-101",
+        "url": "https://example.com/vacancy/demo-101",
+        "title": "Senior LLM Engineer (Agents)",
+        "company": "Northwind Labs",
+        "vacancy_text": _DEMO_V100_TEXT,
+        "salary_text": "€6 500–8 000 / мес",
+        "area": "Лиссабон, удалённо",
+        "work_format": "remote",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["Python", "LLM", "Agents"],
+        "specialization": "ml_engineer",
+        "seniority": "senior",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 91,
+        "recommendation": "strong_apply",
+        "score": {
+            "one_line_verdict": "Агентные пайплайны на проде, оплата в евро через EOR"
+        },
+        "skipped": False,
+    },
+    {
+        "id": 102,
+        "vacancy_id": "demo-102",
+        "url": "https://example.com/vacancy/demo-102",
+        "title": "Applied AI Engineer",
+        "company": "Kestrel Analytics",
+        "vacancy_text": _DEMO_V102_TEXT,
+        "salary_text": "€90 000–110 000 / год",
+        "area": "Берлин, удалённо в ЕС",
+        "work_format": "remote",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["Python", "LLM", "RAG"],
+        "specialization": "ml_engineer",
+        "seniority": "middle",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 84,
+        "recommendation": "apply",
+        "score": {"one_line_verdict": "Ловушка: нужен ВНЖ ЕС"},
+        "skipped": False,
+    },
+    {
+        "id": 103,
+        "vacancy_id": "demo-103",
+        "url": "https://example.com/vacancy/demo-103",
+        "title": "ML Platform Engineer",
+        "company": "Tallgrass Fintech OÜ",
+        "vacancy_text": (
+            "ML Platform Engineer в Tallgrass Fintech OÜ. Платформа моделей для финтеха, "
+            "валютная удалёнка через эстонское юрлицо."
+        ),
+        "salary_text": "$5 000–6 500 / мес",
+        "area": "Таллин, удалённо",
+        "work_format": "remote",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["Python", "MLOps"],
+        "specialization": "ml_engineer",
+        "seniority": "senior",
+        "source": "getmatch",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 78,
+        "recommendation": "apply",
+        "score": {"one_line_verdict": "Платформа моделей, оплата в долларах"},
+        "skipped": False,
+    },
+    {
+        "id": 104,
+        "vacancy_id": "demo-104",
+        "url": "https://example.com/vacancy/demo-104",
+        "title": "Lead AI Engineer",
+        "company": "Brightmoor Health",
+        "vacancy_text": _DEMO_V104_TEXT,
+        "salary_text": "€8 000 / мес",
+        "area": "Амстердам, гибрид",
+        "work_format": "hybrid",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["LLM", "Team Lead"],
+        "specialization": "ml_engineer",
+        "seniority": "lead",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 72,
+        "recommendation": "maybe",
+        "score": {"one_line_verdict": "Гибрид в Амстердаме: нужна релокация"},
+        "skipped": False,
+    },
+    {
+        "id": 105,
+        "vacancy_id": "demo-105",
+        "url": "https://example.com/vacancy/demo-105",
+        "title": "Senior Python Developer (AI)",
+        "company": "Quayside Software",
+        "vacancy_text": (
+            "Senior Python Developer (AI) в Quayside Software. Оплата в долларах, но роль "
+            "больше бэкенд, чем агенты."
+        ),
+        "salary_text": "$4 200 / мес",
+        "area": "Белград, удалённо",
+        "work_format": "remote",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["Python", "FastAPI"],
+        "specialization": "backend",
+        "seniority": "senior",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 66,
+        "recommendation": "maybe",
+        "score": {"one_line_verdict": "Бэкенд с элементами AI, вилка ниже минимума"},
+        "skipped": False,
+    },
+    {
+        "id": 106,
+        "vacancy_id": "demo-106",
+        "url": "https://example.com/vacancy/demo-106",
+        "title": "NLP Engineer",
+        "company": "Halden Robotics",
+        "vacancy_text": _DEMO_V106_TEXT,
+        "salary_text": "NOK 75 000 / мес",
+        "area": "Осло, офис",
+        "work_format": "office",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["NLP", "Python"],
+        "specialization": "ml_engineer",
+        "seniority": "middle",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 54,
+        "recommendation": "skip",
+        "score": {"one_line_verdict": "Только офис в Осло: блокер"},
+        "skipped": False,
+    },
+    {
+        "id": 107,
+        "vacancy_id": "demo-107",
+        "url": "https://example.com/vacancy/demo-107",
+        "title": "Data Scientist",
+        "company": "Ромашка Ритейл",
+        "vacancy_text": (
+            "Data Scientist в Ромашка Ритейл. Рублёвая удалёнка по РФ, не ваш трек."
+        ),
+        "salary_text": "350 000 ₽",
+        "area": "Москва, удалённо",
+        "work_format": "remote",
+        "work_schedule": None,
+        "letter_required": None,
+        "published_at": None,
+        "cover_letter_text": None,
+        "cover_letter_lang": None,
+        "employer_id": None,
+        "skills": ["Python", "SQL"],
+        "specialization": "analyst",
+        "seniority": "middle",
+        "source": "hh",
+        "is_archived": False,
+        "status": "Просмотр",
+        "overall_score": 38,
+        "recommendation": "skip",
+        "score": {"one_line_verdict": "Рублёвая удалёнка по РФ"},
+        "skipped": False,
+    },
+]
+
+#: Резюме демо-аккаунта (вкладка «Резюме», форма `demo-101…` локального стека).
+DEMO_RESUME: dict[str, Any] = {
+    "personal": {
+        "full_name": "Демо Кандидат",
+        "city": "Москва",
+        "relocation": "Не готов",
+    },
+    "position": {
+        "title": "Backend-разработчик",
+        "salary_min": 5000,
+        "salary_currency": "EUR",
+        "salary_basis": "На руки",
+        "schedule": ["Удалённо"],
+        "grade": ["Senior"],
+    },
+    "search_criteria": {
+        "niches": ["LLM-агенты", "RAG"],
+        "market_scope": "Международный",
+    },
+    "key_skills": ["Python", "LLM", "RAG", "Agents"],
+    "languages": [
+        {"name": "Русский", "level": "Родной"},
+        {"name": "English", "level": "C1"},
+    ],
+}
+
+
+class FakeDemoDb:
+    """Двойник `Executor` на демо-данных: `/api/jobs` → 8 строк, резюме, пустой кэш условий.
+
+    SQL-маршрутизация по подстрокам — как в `_FakeJobsPool` и других двойниках репо:
+    тесту важен контракт вызова (fetch/fetchrow/execute), а не SQL-движок.
+    """
+
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple[Any, ...]]] = []
+
+    async def fetch(self, sql: str, *args: Any) -> Any:  # noqa: ARG002
+        if "from jobs" in sql:
+            return [dict(row) for row in DEMO_JOBS]
+        return []
+
+    async def fetchrow(self, sql: str, *args: Any) -> Any:
+        if "from resumes" in sql:
+            return {"data": DEMO_RESUME}
+        if "from jobs" in sql:
+            for arg in args:
+                if isinstance(arg, str) and arg.startswith("demo-"):
+                    row = next((r for r in DEMO_JOBS if r["vacancy_id"] == arg), None)
+                    return dict(row) if row else None
+                if isinstance(arg, int):
+                    row = next((r for r in DEMO_JOBS if r["id"] == arg), None)
+                    return dict(row) if row else None
+            return None
+        return None
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:  # noqa: ARG002
+        return None
+
+    async def execute(self, sql: str, *args: Any) -> Any:
+        self.executed.append((sql, args))
+        return "OK"
+
+    async def executemany(self, sql: str, *args: Any) -> Any:
+        self.executed.append((sql, args))
+        return "OK"
