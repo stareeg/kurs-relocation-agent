@@ -27,6 +27,7 @@ from core.app.agent.state import (
     first_todo_step,
     render_plan,
 )
+from core.app.agent.subagents import build_subagent_specs
 from core.app.agent.tools import StepRecorder, build_run_context, to_langchain_tools
 
 
@@ -67,10 +68,14 @@ def step_node(
     base_context: ToolContext,
     limits: RunLimits,
     observer: RunObserver | None = None,
+    subagent_models: dict[str, BaseChatModel] | None = None,
 ) -> Any:
     """Узел `step`: собрать исполнителя deepagents на текущий шаг и выполнить его.
 
     `observer` (A-3) получает события шага: tool_called на каждый вызов инструмента.
+    `subagent_models` (A-8, OQ-28) объявляет субагентов инструмента `task`:
+    исследователь страны и оценщик вакансий, лимит вызовов — `RunLimits.
+    max_subagent_calls`; вызовы модели субагентов считает тот же бюджет запуска.
     """
 
     async def _step(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
@@ -80,10 +85,19 @@ def step_node(
         index = state.get("steps_taken", 0) + 1
         recorder = StepRecorder(step.id, index, emit=observer)
         ctx = build_run_context(base_context, recorder)
+        extra_middleware: list[Any] = []
+        subagent_specs = None
+        if subagent_models:
+            subagent_specs, gate = build_subagent_specs(
+                subagent_models, ctx, recorder, limits, observer
+            )
+            extra_middleware.append(gate)
         agent: CompiledStateGraph = build_step_agent(
             model=model,
             tools=to_langchain_tools(tools, ctx, recorder),
             system_prompt=build_step_system(state),
+            subagents=subagent_specs,
+            middleware=extra_middleware,
         )
         run_config: dict[str, Any] = {
             **(config or {}),

@@ -109,6 +109,7 @@ class RunLimits:
     max_model_calls: int = 40  # вызовов модели на запуск, включая вызовы внутри шага
     max_tokens: int = 200_000  # суммарных токенов вход+выход на запуск
     max_failure_streak: int = 2  # подряд идущих неудачных шагов до передачи перестройке
+    max_subagent_calls: int = 2  # вызовов `task` (субагентов) на шаг (OQ-28)
     step_max_turns: int = 4  # ходов модели внутри одного шага (маленький ReAct, OQ-6)
     plan_min_steps: int = 2
     plan_max_steps: int = 6

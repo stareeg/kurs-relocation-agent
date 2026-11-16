@@ -548,13 +548,23 @@ class StepRecorder:
     """Копилка фактов одного шага: результаты инструментов, ошибки, вакансии, карточка.
 
     Один экземпляр на запуск шага; заполняется обёртками инструментов, вычитается узлом
-    шага в состояние (`Observation`, `vacancies`, `pending_action`).
+    шага в состояние (`Observation`, `vacancies`, `pending_action`). Для инструментов
+    субагента (A-8) — отдельный экземпляр с тегом `subagent`: событие уходит в поток
+    с именем роли, а вакансии сливает в запись шага мидлварь `SubagentGate`.
     """
 
-    def __init__(self, step_id: str, index: int, emit: RunObserver | None = None) -> None:
+    def __init__(
+        self,
+        step_id: str,
+        index: int,
+        emit: RunObserver | None = None,
+        *,
+        subagent: str | None = None,
+    ) -> None:
         self.step_id = step_id
         self.index = index
         self._observer = emit
+        self.subagent = subagent
         self.tools: list[str] = []
         self.summaries: list[str] = []
         self.last_error: str | None = None
@@ -586,17 +596,20 @@ class StepRecorder:
                         self.vacancies.append(item)
                         known.add(str(item.get("id")))
         if self._observer is not None:
+            payload: dict[str, Any] = {
+                "step_id": self.step_id,
+                "index": self.index,
+                "tool": tool.name,
+                "ok": error is None,
+                "summary": self.summaries[-1],
+                "error": error.get("message") if error else None,
+            }
+            if self.subagent:
+                payload["subagent"] = self.subagent
             self._observer.emit(
                 AgentEvent(
                     type="tool_called",
-                    payload={
-                        "step_id": self.step_id,
-                        "index": self.index,
-                        "tool": tool.name,
-                        "ok": error is None,
-                        "summary": self.summaries[-1],
-                        "error": error.get("message") if error else None,
-                    },
+                    payload=payload,
                     node="step",
                 )
             )

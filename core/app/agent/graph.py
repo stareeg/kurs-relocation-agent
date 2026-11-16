@@ -48,6 +48,7 @@ from core.app.agent.state import (
     first_todo_step,
     plan_has_open_steps,
 )
+from core.app.agent.subagents import COUNTRY_RESEARCHER, VACANCY_ASSESSOR
 from core.app.agent.toolkit import execute_tool
 
 
@@ -56,8 +57,10 @@ class AgentDeps:
     """Модели и материалы графа. По умолчанию — платформенные модели по тирам.
 
     Тиры (решение 15.11, OQ-13): планировщик и перестройка — advanced (high effort),
-    исполнитель шага — basic (low effort, скорость). Судья (A-5) добавит свой вызов.
-    `observer` (A-3) — синхронный получатель событий запуска (узловые таймеры, шаги).
+    исполнитель шага и оба субагента — basic (low effort, скорость; OQ-28). Судья
+    (A-5) добавит свой вызов. `observer` (A-3) — синхронный получатель событий запуска
+    (узловые таймеры, шаги). `subagent_models` (A-8) — модели субагентов по ролям;
+    пусто — шаг работает без `task` (старое поведение тестов).
     """
 
     planner: BaseChatModel
@@ -67,6 +70,7 @@ class AgentDeps:
     tools: tuple[Tool, ...] = field(default_factory=tuple)
     tool_context: ToolContext = field(default_factory=ToolContext)
     observer: RunObserver | None = None
+    subagent_models: dict[str, BaseChatModel] = field(default_factory=dict)
 
 
 def default_deps(account_id: int = 1) -> AgentDeps:
@@ -74,11 +78,14 @@ def default_deps(account_id: int = 1) -> AgentDeps:
 
     `account_id` — аккаунт запроса; менеджер запусков (`runs.py`) передаёт аккаунт
     владельца запуска. БД инструментов не передаётся: домены сами открывают пул.
+    Субагенты (A-8, OQ-28) — две роли на basic/low.
     """
     from core.app.agent.llm import (
         AGENT_PLAN,
         AGENT_REPLAN,
         AGENT_STEP,
+        AGENT_SUB_COUNTRY,
+        AGENT_SUB_VACANCY,
         ensure_agent_features_registered,
     )
     from core.app.agent.tools import TOOLS, ensure_tools_registered
@@ -92,6 +99,10 @@ def default_deps(account_id: int = 1) -> AgentDeps:
         replanner=chat_model_for(AGENT_REPLAN, temperature=0.2),
         tools=TOOLS,
         tool_context=ToolContext(account_id=account_id),
+        subagent_models={
+            COUNTRY_RESEARCHER: chat_model_for(AGENT_SUB_COUNTRY, temperature=0.2),
+            VACANCY_ASSESSOR: chat_model_for(AGENT_SUB_VACANCY, temperature=0.2),
+        },
     )
 
 
@@ -442,7 +453,14 @@ def build_agent_graph(
         "step",
         _observed_node(
             "step",
-            step_node(deps.executor, deps.tools, deps.tool_context, limits, observer),
+            step_node(
+                deps.executor,
+                deps.tools,
+                deps.tool_context,
+                limits,
+                observer,
+                subagent_models=deps.subagent_models,
+            ),
             observer,
         ),
     )

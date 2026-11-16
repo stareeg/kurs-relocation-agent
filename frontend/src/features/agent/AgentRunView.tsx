@@ -55,8 +55,11 @@ function eventLine(ev: AgentEvent): string | null {
       return "План составлен"
     case "step_started":
       return `Шаг ${String(p.index ?? "")}: ${String(p.title ?? p.step_id ?? "")}`
-    case "tool_called":
-      return `Инструмент: ${String(p.summary ?? p.tool ?? "")}`
+    case "tool_called": {
+      const subagent = p.subagent as string | undefined
+      const label = subagent ? `Субагент ${subagent}` : "Инструмент"
+      return `${label}: ${String(p.summary ?? p.tool ?? "")}`
+    }
     case "observation":
       return null // сводка уже видна в tool_called
     case "plan_changed":
