@@ -222,3 +222,34 @@ describe("AgentRunCard — U-1: правка письма, автоподтве�
     expect(screen.getByText(/офис в Берлине обязателен/)).toBeTruthy()
   })
 })
+
+describe("AgentRunCard — A-9: «Стоп»", () => {
+  it("у живого запуска «Стоп» уходит один раз; у завершённого кнопки нет", () => {
+    const onStop = vi.fn(() => new Promise<void>(() => {}))
+    const live = makeView({ status: "running", live: true })
+    const { unmount } = render(<AgentRunCard view={live} onStop={onStop} />)
+    fireEvent.click(screen.getByRole("button", { name: "Остановить запуск" }))
+    fireEvent.click(screen.getByRole("button", { name: "Остановить запуск" }))
+    expect(onStop).toHaveBeenCalledTimes(1)
+    expect(onStop).toHaveBeenCalledWith(1)
+    unmount()
+    render(<AgentRunCard view={makeView({})} onStop={onStop} />)
+    expect(screen.queryByRole("button", { name: "Остановить запуск" })).toBeNull()
+  })
+
+  it("остановленный запуск: «Остановлено», частичный итог и «Повторить»", () => {
+    const onRetry = vi.fn()
+    const view = makeView({
+      status: "cancelled",
+      answer: "Не удалось закончить цель: запуск остановлен человеком кнопкой «Стоп».",
+      run: { ...makeView({}).run, status: "cancelled", stop_reason: "cancelled" },
+      events: [ev(1, "cancelled", { stop_reason: "cancelled" })],
+    })
+    render(<AgentRunCard view={view} onRetry={onRetry} />)
+    expect(screen.getByText("Остановлено")).toBeTruthy()
+    expect(screen.queryByText(/· cancelled/)).toBeNull()
+    expect(screen.getByText(/запуск остановлен человеком/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Повторить/ }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+  })
+})

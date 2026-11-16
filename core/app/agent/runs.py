@@ -27,14 +27,14 @@ from langgraph.types import Command
 
 from core.app.agent.budget import RunBudget, put_budget
 from core.app.agent.events import AgentEvent
-from core.app.agent.graph import AgentDeps, build_agent_graph, default_deps
+from core.app.agent.graph import AgentDeps, build_agent_graph, cancelled_answer, default_deps
 from core.kernel.errors import InvalidInput, NotFound
 from core.platform.repo import agent_runs as runs_repo
 from core.platform.repo.agent_runs import AgentEventRecord, AgentRunRecord
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_EVENT_TYPES = frozenset({"done", "failed"})
+TERMINAL_EVENT_TYPES = frozenset({"done", "failed", "cancelled"})
 """События, закрывающие SSE-поток запуска."""
 
 
@@ -154,6 +154,9 @@ class _LiveRun:
     subscribers: list[asyncio.Queue[AgentEventRecord]] = field(default_factory=list)
     pump: _EventPump | None = None
     task: asyncio.Task[None] | None = None
+    # «Стоп» человека (A-9): отличает отмену запуска от остановки процесса, где
+    # CancelledError должен уйти наверх, а пауза — пережить рестарт.
+    cancel_requested: bool = False
 
 
 class _EventPump:
@@ -378,6 +381,8 @@ class AgentRunsManager:
         live.pump = pump
         pump.start()
         budget: RunBudget | None = None
+        graph: Any = None
+        config: RunnableConfig | None = None
         try:
             deps = await self._deps_factory(live.account_id)
             deps.observer = pump  # наблюдатель протокола RunObserver: узлы зовут pump.emit
@@ -455,7 +460,12 @@ class AgentRunsManager:
                 )
             )
         except asyncio.CancelledError:
-            raise
+            if not live.cancel_requested:
+                raise  # остановка процесса: пауза и чекпойнт переживут рестарт
+            try:
+                await self._finish_cancelled(live, graph, config, pump)
+            except Exception:  # noqa: BLE001 — база может быть недоступна в этот момент
+                logger.exception("запуск run=%s: не записал cancelled в базу", live.run_id)
         except Exception as exc:  # noqa: BLE001 — падение задачи это failed в базе, не 500 в лог
             logger.exception("запуск run=%s упал: %s", live.run_id, exc)
             live.status = "failed"
@@ -469,6 +479,77 @@ class AgentRunsManager:
         finally:
             await pump.close()
             self._live.pop(live.run_id, None)
+
+    async def cancel(self, *, run_id: int, account_id: int) -> AgentRunRecord:
+        """«Стоп» (A-9): отменить запуск — идущий или ждущий подтверждения.
+
+        Живая задача отменяется и сама пишет `cancelled` с частичным итогом по последнему
+        чекпойнту. Задачи нет (пауза пережила рестарт API) — итог собирается здесь же.
+        Действие, ждавшее «да», не выполняется.
+        """
+        record = await self._store.get_run(run_id, account_id=account_id)
+        if record is None:
+            raise NotFound(f"запуск {run_id} не найден")
+        if record.status in ("done", "failed", "cancelled"):
+            raise InvalidInput(f"запуск {run_id} уже завершён (статус {record.status})")
+        live = self._live.get(run_id)
+        if live is not None and live.task is not None and not live.task.done():
+            live.cancel_requested = True
+            live.task.cancel()
+            return record
+        live = _LiveRun(
+            run_id=record.id,
+            account_id=account_id,
+            thread_id=record.thread_id,
+            goal=record.goal,
+            session_id=record.session_id,
+            status=record.status,
+        )
+        pump = _EventPump(self._store, live)
+        live.pump = pump
+        pump.start()
+        try:
+            graph: Any = None
+            config: RunnableConfig | None = None
+            if self._checkpointer is not None:
+                deps = await self._deps_factory(account_id)
+                graph = build_agent_graph(deps, checkpointer=self._checkpointer)
+                config = {"configurable": {"thread_id": record.thread_id}}
+            await self._finish_cancelled(live, graph, config, pump)
+        finally:
+            await pump.close()
+        return record
+
+    async def _finish_cancelled(
+        self, live: _LiveRun, graph: Any, config: RunnableConfig | None, pump: _EventPump
+    ) -> None:
+        """Записать `cancelled` и честный частичный итог по последнему чекпойнту."""
+        values: dict[str, Any] = {}
+        if graph is not None and config is not None:
+            try:
+                snapshot = await graph.aget_state(config)
+                values = dict(snapshot.values or {})
+            except Exception:  # noqa: BLE001 — нет чекпойнта: итог без сделанных шагов
+                logger.warning("запуск run=%s: нет чекпойнта для итога отмены", live.run_id)
+        answer = cancelled_answer(values)
+        live.status = "cancelled"
+        await self._store.update_run(
+            live.run_id,
+            account_id=live.account_id,
+            status="cancelled",
+            stop_reason="cancelled",
+            answer=answer,
+        )
+        pump.emit(
+            AgentEvent(
+                type="cancelled",
+                payload={
+                    "answer": answer,
+                    "stop_reason": "cancelled",
+                    "steps_taken": values.get("steps_taken"),
+                },
+            )
+        )
 
     async def _seed_budget(self, graph: Any, config: RunnableConfig, budget: RunBudget) -> None:
         """Счётчики из чекпойнта в бюджет: предел продолжается, а не начинается заново."""

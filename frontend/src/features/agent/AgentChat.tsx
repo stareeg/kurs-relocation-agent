@@ -12,7 +12,7 @@
  * содержимом ловит и новые реплики, и события запуска.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, Copy, Loader2, Menu, PanelRightOpen, Send } from "lucide-react"
+import { ArrowDown, Copy, Menu, PanelRightOpen, Send, Square } from "lucide-react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -309,6 +309,18 @@ export function AgentChat() {
     void sendAgentRun(goal)
   }
 
+  /** «Стоп» (A-9): из строки запуска или кнопкой композера, пока агент работает. */
+  async function stopRun(runId: number) {
+    try {
+      await runs.cancel(runId)
+    } catch (err) {
+      toast.error("Не удалось остановить запуск")
+      throw err
+    }
+  }
+
+  const activeRun = runList.find((r) => !["done", "failed", "cancelled"].includes(r.status)) ?? null
+
   function retryRun(goal: string) {
     if (runs.hasActive) return
     pinned.current = true
@@ -407,6 +419,7 @@ export function AgentChat() {
                       onOpenVacancy={openVacancy}
                       onRetry={retryRun}
                       retryDisabled={runs.hasActive}
+                      onStop={stopRun}
                       onApprove={(runId, approved, edits) => {
                         pinned.current = true
                         void runs.approve(runId, approved, edits).catch(() =>
@@ -529,20 +542,30 @@ export function AgentChat() {
                 <span className="ml-auto hidden text-xs text-muted-foreground md:inline">
                   Enter — отправить, Shift+Enter — новая строка
                 </span>
-                <Button
-                  size="icon"
-                  type="button"
-                  className="size-8"
-                  aria-label="Отправить"
-                  disabled={!canSend}
-                  onClick={send}
-                >
-                  {busy ? (
-                    <Loader2 className="size-4 animate-spin" strokeWidth={2} />
-                  ) : (
+                {busy && activeRun ? (
+                  <Button
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                    className="size-8"
+                    aria-label="Остановить запуск"
+                    title="Остановить: агент запишет, что успел сделать"
+                    onClick={() => void stopRun(activeRun.run.id).catch(() => undefined)}
+                  >
+                    <Square className="size-3.5" strokeWidth={2.5} />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    type="button"
+                    className="size-8"
+                    aria-label="Отправить"
+                    disabled={!canSend}
+                    onClick={send}
+                  >
                     <Send className="size-4" strokeWidth={2} />
-                  )}
-                </Button>
+                  </Button>
+                )}
               </div>
             </div>
           </div>

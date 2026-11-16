@@ -32,7 +32,7 @@ export const STATUS: Record<AgentRunStatus, { label: string; tone: string; dot: 
   },
   done: { label: "Готово", tone: "text-status-strong-fg", dot: "bg-status-strong-dot" },
   failed: { label: "Ошибка", tone: "text-status-bad-fg", dot: "bg-status-bad-dot" },
-  cancelled: { label: "Отменено", tone: "text-muted-foreground", dot: "bg-slate-300" },
+  cancelled: { label: "Остановлено", tone: "text-muted-foreground", dot: "bg-slate-300" },
 }
 
 const TOOL_LABEL: Record<string, string> = {
@@ -192,6 +192,8 @@ function toLogRow(ev: AgentEvent): LogRow | null {
               : "Человек подтвердил действие",
       }
     }
+    case "cancelled":
+      return { id: ev.id, kind: "info", title: "Запуск остановлен кнопкой «Стоп»" }
     case "failed":
       return { id: ev.id, kind: "tool-error", title: "Запуск упал", detail: typeof p.error === "string" ? p.error : undefined }
     default:

@@ -128,6 +128,11 @@ export function approveAgentRun(
   })
 }
 
+/** «Стоп» (A-9): запуск получает `cancelled` и частичный итог; действие без «да» не выполняется. */
+export function cancelAgentRun(runId: number): Promise<AgentRun> {
+  return api.post<AgentRun>(`/api/agent/runs/${runId}/cancel`)
+}
+
 // ---------------------------------------------------------------- настройки агента
 
 /** Режим подтверждения действий (OQ-8): спрашивать каждый раз или подтверждать автоматически. */

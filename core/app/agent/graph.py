@@ -436,6 +436,19 @@ def _compose_answer(state: AgentState, stop: str) -> str:
     return "\n\n".join(lines)
 
 
+def cancelled_answer(state: AgentState | dict[str, Any]) -> str:
+    """Частичный итог остановленного запуска (A-9): что удалось, что осталось, чего не сделали.
+
+    Состояние — последний чекпойнт: узел, который шёл в момент «Стоп», в него не попал.
+    Действие, ждавшее подтверждения, явно названо невыполненным.
+    """
+    text = _compose_answer(state, "cancelled")  # type: ignore[arg-type]
+    pending = state.get("pending_action") or {}
+    if pending.get("action"):
+        text += f"\n\nДействие не выполнено: {pending['action']} (ждало подтверждения)."
+    return text
+
+
 def route_after_plan(state: AgentState) -> Literal["step", "finalize"]:
     """После планировщика: план готов — работаем; сбой модели — честный финал."""
     if state.get("stop_reason") is not None:
@@ -720,6 +733,7 @@ async def run_agent_goal(
 __all__ = [
     "AgentDeps",
     "build_agent_graph",
+    "cancelled_answer",
     "check_node",
     "EDITABLE_PARAMS",
     "apply_edits",

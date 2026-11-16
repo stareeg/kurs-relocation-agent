@@ -266,6 +266,25 @@ async def approve_agent_run(
     return run_out(fresh or record)
 
 
+@router.post("/runs/{run_id}/cancel", response_model=AgentRunOut)
+async def cancel_agent_run(
+    run_id: int, account: AccountContext = Depends(require_account_context)
+) -> AgentRunOut:
+    """«Стоп» (A-9): статус `cancelled` и частичный итог; действие без «да» не выполняется."""
+    manager = get_runs_manager()
+    try:
+        record = await manager.cancel(run_id=run_id, account_id=account.account_id)
+        # Отмена живой задачи дописывает итог асинхронно — даём ей пару секунд.
+        settled = await manager.wait_settled(
+            run_id=run_id, account_id=account.account_id, timeout=2.0, terminal=True
+        )
+    except DomainError as exc:
+        raise to_http(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"БД недоступна: {exc}") from exc
+    return run_out(settled or record)
+
+
 @router.get("/settings", response_model=AgentSettingsOut)
 async def get_agent_settings(
     account: AccountContext = Depends(require_account_context),

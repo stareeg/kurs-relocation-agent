@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   approveAgentRun,
+  cancelAgentRun,
   getAgentRun,
   listAgentRuns,
   replayAgentRunEvents,
@@ -129,6 +130,12 @@ function foldEvent(view: RunView, ev: AgentEvent): RunView {
       break
     case "done":
       next.status = "done"
+      next.answer = typeof payload.answer === "string" ? payload.answer : next.answer
+      next.card = null
+      next.live = false
+      break
+    case "cancelled":
+      next.status = "cancelled"
       next.answer = typeof payload.answer === "string" ? payload.answer : next.answer
       next.card = null
       next.live = false
@@ -290,12 +297,32 @@ export function useAgentRuns(sessionId: number | null) {
     [],
   )
 
+  /** «Стоп» (A-9): ответ сервера уже терминальный — применяем сразу, SSE догонит событием. */
+  const cancel = useCallback(async (runId: number): Promise<void> => {
+    const fresh = await cancelAgentRun(runId)
+    if (!TERMINAL.includes(fresh.status)) return
+    setRuns((cur) =>
+      cur.map((r) =>
+        r.run.id === runId
+          ? {
+              ...r,
+              run: { ...r.run, ...fresh },
+              status: fresh.status,
+              answer: fresh.answer ?? r.answer,
+              card: null,
+              live: false,
+            }
+          : r,
+      ),
+    )
+  }, [])
+
   const hasActive = useMemo(
     () => runs.some((r) => !TERMINAL.includes(r.status)),
     [runs],
   )
 
-  return { runs, start, approve, hasActive }
+  return { runs, start, approve, cancel, hasActive }
 }
 
 export type AgentRuns = ReturnType<typeof useAgentRuns>

@@ -28,6 +28,7 @@ EventType = Literal[
     "node_timing",
     "done",
     "failed",
+    "cancelled",
 ]
 """Типы событий запуска."""
 

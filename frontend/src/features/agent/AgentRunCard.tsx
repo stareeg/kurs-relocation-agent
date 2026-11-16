@@ -1,5 +1,5 @@
-import type { ReactNode } from "react"
-import { AlertTriangle, ChevronRight, RotateCcw } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import { AlertTriangle, ChevronRight, Loader2, RotateCcw, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { MarkdownView, type QuoteAction } from "@/components/markdown-view"
@@ -41,6 +41,7 @@ export function AgentRunCard({
   onOpenVacancy,
   onRetry,
   retryDisabled = false,
+  onStop,
 }: {
   view: RunView
   showGoal?: boolean
@@ -53,6 +54,8 @@ export function AgentRunCard({
   onOpenVacancy?: (vacancyId: string, quote?: string) => void
   onRetry?: (goal: string) => void
   retryDisabled?: boolean
+  /** «Стоп» (A-9) у идущего запуска и у ждущего подтверждения. */
+  onStop?: (runId: number) => Promise<void> | void
 }) {
   const status = view.status
   const terminal = TERMINAL.includes(status)
@@ -68,9 +71,15 @@ export function AgentRunCard({
   const now = useNow(!terminal)
   const startedMs = view.run.created_at ? Date.parse(view.run.created_at) : view.createdAtMs
   const st = STATUS[status]
+  const [stopping, setStopping] = useState(false)
+  function stop() {
+    if (!onStop || stopping) return
+    setStopping(true)
+    void Promise.resolve(onStop(view.run.id)).catch(() => setStopping(false))
+  }
 
   const stopReason =
-    view.run.stop_reason && view.run.stop_reason !== "answered"
+    view.run.stop_reason && view.run.stop_reason !== "answered" && view.run.stop_reason !== "cancelled"
       ? (STOP_REASON_TEXT[view.run.stop_reason] ?? view.run.stop_reason)
       : null
   const durationMs =
@@ -164,6 +173,23 @@ export function AgentRunCard({
             <span className="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline">
               {clock}
             </span>
+          ) : null}
+          {!terminal && onStop ? (
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              aria-label="Остановить запуск"
+              title="Остановить: агент запишет, что успел сделать; действие без «да» не выполнится"
+              disabled={stopping}
+              onClick={stop}
+            >
+              {stopping ? (
+                <Loader2 className="size-3 animate-spin" strokeWidth={2} />
+              ) : (
+                <Square className="size-3" strokeWidth={2.5} />
+              )}
+              Стоп
+            </button>
           ) : null}
           {onShowWork ? (
             <button

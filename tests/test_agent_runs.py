@@ -285,3 +285,97 @@ async def test_auto_confirm_run_never_waits():
     auto = [e for e in store.events if e.type == "confirmation_resolved"]
     assert auto and auto[-1].payload["auto"] is True
     assert any("auto_apply_queue_overrides" in sql for sql, _ in db.executed)
+
+
+# ---------------------------------------------------------------- A-9: «Стоп»
+
+
+class _HangingChatModel(ScriptedChatModel):
+    """Модель, которая «думает» дольше теста: отмена приходит посреди вызова."""
+
+    async def _agenerate(self, *args: Any, **kwargs: Any) -> Any:
+        await asyncio.sleep(30)
+        raise AssertionError("отменённый запуск не должен дождаться модели")
+
+
+async def _until_status(store: InMemoryRunsStore, run_id: int, status: str) -> None:
+    for _ in range(300):
+        record = await store.get_run(run_id, account_id=1)
+        if record is not None and record.status == status:
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"запуск не дошёл до {status}")
+
+
+async def test_cancel_running_run_mid_model_call():
+    """«Стоп» посреди вызова модели: cancelled, честный итог, терминальное событие."""
+    db = FakeDemoDb()
+    store = InMemoryRunsStore()
+    base = _deps_factory(db, action="search")
+
+    async def factory(account_id: int) -> AgentDeps:
+        deps = await base(account_id)
+        return replace(deps, planner=_HangingChatModel(responses=[AIMessage(content="{}")]))
+
+    manager = AgentRunsManager(store, deps_factory=factory, checkpointer=MemorySaver())
+    record = await manager.start_run(account_id=1, goal="Найди вакансии backend")
+    await _until_status(store, record.id, "running")
+
+    await manager.cancel(run_id=record.id, account_id=1)
+    final = await _settle(manager, record.id, terminal=True)
+    assert final.status == "cancelled"
+    assert final.stop_reason == "cancelled"
+    assert "остановлен человеком" in (final.answer or "")
+    types = store.event_types(record.id)
+    assert types[-1] == "cancelled"
+    assert db.executed == []
+
+
+async def test_cancel_waiting_run_does_not_execute_action():
+    """«Стоп» на паузе: действие не выполнено и названо в итоге невыполненным."""
+    db = FakeDemoDb()
+    store = InMemoryRunsStore()
+    manager = AgentRunsManager(store, deps_factory=_deps_factory(db), checkpointer=MemorySaver())
+    record = await manager.start_run(account_id=1, goal=GOAL)
+    assert (await _settle(manager, record.id)).status == "waiting_approval"
+
+    await manager.cancel(run_id=record.id, account_id=1)
+    final = await _settle(manager, record.id, terminal=True)
+    assert final.status == "cancelled"
+    assert "Действие не выполнено: queue_application" in (final.answer or "")
+    assert db.executed == [], "отмена не выполняет действие"
+    cancelled = [e for e in store.events if e.type == "cancelled"]
+    assert cancelled and cancelled[-1].payload["stop_reason"] == "cancelled"
+    with pytest.raises(InvalidInput):
+        await manager.approve(run_id=record.id, account_id=1, approved=True)
+
+
+async def test_cancel_pause_after_restart_uses_checkpoint():
+    """Пауза пережила рестарт (живой задачи нет): итог отмены — по чекпойнту."""
+    db = FakeDemoDb()
+    saver = MemorySaver()
+    store = InMemoryRunsStore()
+    first = AgentRunsManager(store, deps_factory=_deps_factory(db), checkpointer=saver)
+    record = await first.start_run(account_id=1, goal=GOAL)
+    assert (await _settle(first, record.id)).status == "waiting_approval"
+
+    second = AgentRunsManager(store, deps_factory=_deps_factory(db), checkpointer=saver)
+    await second.cancel(run_id=record.id, account_id=1)
+    final = await store.get_run(record.id, account_id=1)
+    assert final is not None and final.status == "cancelled"
+    assert "Действие не выполнено: queue_application" in (final.answer or "")
+    assert store.event_types(record.id)[-1] == "cancelled"
+    assert db.executed == []
+
+
+async def test_cancel_finished_or_unknown_run_is_rejected():
+    store = InMemoryRunsStore()
+    manager = AgentRunsManager(
+        store, deps_factory=_deps_factory(FakeDemoDb(), action="search"), checkpointer=MemorySaver()
+    )
+    record = await manager.start_run(account_id=1, goal="Найди вакансии backend")
+    await _settle(manager, record.id, terminal=True)
+    with pytest.raises(InvalidInput):
+        await manager.cancel(run_id=record.id, account_id=1)
+    with pytest.raises(NotFound):
+        await manager.cancel(run_id=999, account_id=1)
